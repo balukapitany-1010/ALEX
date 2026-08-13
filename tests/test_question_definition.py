@@ -25,6 +25,9 @@ def test_question_definition_can_be_created():
         title="Használ-e a vállalkozás megújuló energiát?",
         category = QuestionCategory.E,
         subject = "Teszt subjects",
+        organization = "SZTFH",
+        organization_sizes = ["Large", "Medium", "company_subject_to_the_ESG_ACT",],
+        geographical_relevance = ["HU/EGT/Switzerland", "OECD", "Other",],
     )
 
     assert definition.question is question
@@ -46,6 +49,9 @@ def test_question_definition_rejects_invalid_question():
             title="Teszt kérdés",
             category=QuestionCategory.E,
             subject="Teszt subjects",
+            organization="SZTFH",
+            organization_sizes=["Large" ],
+            geographical_relevance=["HU/EGT/Switzerland" ],
         )
 
 
@@ -62,6 +68,9 @@ def test_question_definition_rejects_invalid_questionnaire():
             title="Teszt kérdés",
             category=QuestionCategory.E,
             subject="Teszt subjects",
+            organization="SZTFH",
+            organization_sizes=["Large"],
+            geographical_relevance=["HU/EGT/Switzerland"],
         )
 
 
@@ -85,6 +94,9 @@ def test_question_definition_rejects_empty_title():
             title="",
             category=QuestionCategory.E,
             subject="Teszt subjects",
+            organization="SZTFH",
+            organization_sizes=["Large"],
+            geographical_relevance=["HU/EGT/Switzerland"],
         )
 
 def test_question_definition_has_category():
@@ -103,6 +115,9 @@ def test_question_definition_has_category():
         title = "Teszt Kérdés",
         category = QuestionCategory.E,
         subject="Teszt subjects",
+        organization="SZTFH",
+        organization_sizes=["Large"],
+        geographical_relevance=["HU/EGT/Switzerland"],
     )
 
     assert definition.category == QuestionCategory.E
@@ -124,6 +139,9 @@ def test_question_definition_rejects_invalid_category():
             title="Teszt kérdés",
             category = "E",
             subject = "Teszt subjects",
+            organization="SZTFH",
+            organization_sizes=["Large"],
+            geographical_relevance=["HU/EGT/Switzerland"],
         )
 
 def test_question_definition_has_subject():
@@ -142,6 +160,9 @@ def test_question_definition_has_subject():
         title="Teszt Kérdés",
         category=QuestionCategory.E,
         subject="Környezeti fenntarthatóság",
+        organization="SZTFH",
+        organization_sizes=["Large"],
+        geographical_relevance=["HU/EGT/Switzerland"],
     )
     assert definition.subject == "Környezeti fenntarthatóság"
 
@@ -162,4 +183,99 @@ def test_question_definition_rejects_empty_subjects():
             title = "Teszt Kérdés",
             category = QuestionCategory.E,
             subject = "",
+            organization="SZTFH",
+            organization_sizes=["Large"],
+            geographical_relevance=["HU/EGT/Switzerland"],
+        )
+
+def test_question_definition_has_organization_metadata():
+    question = Question(
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    definition = QuestionDefinition(
+        question=question,
+        questionnaire=questionnaire,
+        title="Teszt kérdés",
+        category=QuestionCategory.E,
+        subject="Környezeti fenntarthatóság",
+        organization="SZTFH",
+        organization_sizes=[
+            "Large",
+            "Medium",
+            "company_subject_to_the_ESG_Act",
+        ],
+        geographical_relevance=[
+            "HU/EGT/Switzerland",
+            "OECD",
+            "Other",
+        ],
+    )
+
+    assert definition.organization == "SZTFH"
+
+    assert definition.organization_sizes == [
+        "Large",
+        "Medium",
+        "company_subject_to_the_ESG_Act",
+    ]
+
+    assert definition.geographical_relevance == [
+        "HU/EGT/Switzerland",
+        "OECD",
+        "Other",
+    ]
+
+def test_question_definition_rejects_invalid_organization_sizes():
+    question = Question(
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    with pytest.raises(TypeError):
+        QuestionDefinition(
+            question=question,
+            questionnaire=questionnaire,
+            title="Teszt kérdés",
+            category=QuestionCategory.E,
+            subject="Teszt",
+            organization="SZTFH",
+            organization_sizes="Large",
+            geographical_relevance=["OECD"],
+        )
+def test_question_definition_rejects_invalid_geographical_relevance():
+    question = Question(
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    with pytest.raises(TypeError):
+        QuestionDefinition(
+            question=question,
+            questionnaire=questionnaire,
+            title="Teszt kérdés",
+            category=QuestionCategory.E,
+            subject="Teszt",
+            organization="SZTFH",
+            organization_sizes=["Large"],
+            geographical_relevance="OECD",
         )

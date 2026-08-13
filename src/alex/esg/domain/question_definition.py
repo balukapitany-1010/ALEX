@@ -11,6 +11,9 @@ class QuestionDefinition:
         title: str,
         category: QuestionCategory,
         subject: str,
+        organization: str,
+        organization_sizes: list [str],
+        geographical_relevance: list [str],
     ):
         if not isinstance(question, Question):
             raise TypeError("question must be a Question")
@@ -33,8 +36,34 @@ class QuestionDefinition:
         if not subject.strip():
             raise ValueError("subject cannot be empty")
 
+        if not isinstance(organization, str):
+            raise TypeError("organization must be a string")
+
+        if not organization.strip():
+            raise ValueError("organization cannot be empty")
+
+        if not isinstance(organization_sizes, list):
+            raise TypeError("organization_sizes must be a list")
+
+        if not all(isinstance(value, str) for value in organization_sizes):
+            raise TypeError("organization_sizes must contain only strings")
+
+        if not isinstance(geographical_relevance, list):
+            raise TypeError("geographical_relevance must be a list")
+
+        if not all(
+                isinstance(value, str)
+                for value in geographical_relevance
+        ):
+            raise TypeError(
+                "geographical_relevance must contain only strings"
+            )
+
         self.question = question
         self.questionnaire = questionnaire
         self.title = title
         self.category = category
         self.subject = subject
+        self.organization = organization
+        self.organization_sizes = list(organization_sizes)
+        self.geographical_relevance = list(geographical_relevance)
