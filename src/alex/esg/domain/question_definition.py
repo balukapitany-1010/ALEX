@@ -14,6 +14,8 @@ class QuestionDefinition:
         organization: str,
         organization_sizes: list [str],
         geographical_relevance: list [str],
+        topic: str,
+        subtopic: str | None = None,
     ):
         if not isinstance(question, Question):
             raise TypeError("question must be a Question")
@@ -59,6 +61,17 @@ class QuestionDefinition:
                 "geographical_relevance must contain only strings"
             )
 
+        if not isinstance(topic, str):
+            raise TypeError("topic must be a string")
+
+        if not topic.strip():
+            raise ValueError("topic cannot be empty")
+
+        if subtopic is not None and not isinstance(subtopic, str):
+            raise TypeError("subtopic must be a string or None")
+        if subtopic is not None and not subtopic.strip():
+            raise ValueError("subtopic cannot be empty")
+
         self.question = question
         self.questionnaire = questionnaire
         self.title = title
@@ -67,3 +80,5 @@ class QuestionDefinition:
         self.organization = organization
         self.organization_sizes = list(organization_sizes)
         self.geographical_relevance = list(geographical_relevance)
+        self.topic = topic
+        self.subtopic = subtopic
