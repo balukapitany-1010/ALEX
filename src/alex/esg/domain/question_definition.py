@@ -1,6 +1,8 @@
 from alex.esg.domain.question import Question
 from alex.esg.domain.questionnaire import Questionnaire
 from alex.esg.domain.question_category import QuestionCategory
+from alex.esg.domain.question_type import QuestionType
+from alex.esg.domain.option import Option
 
 
 class QuestionDefinition:
@@ -15,7 +17,10 @@ class QuestionDefinition:
         organization_sizes: list [str],
         geographical_relevance: list [str],
         topic: str,
+        question_type: QuestionType,
         subtopic: str | None = None,
+        requirement: str | None = None,
+        options: list[str] | None = None,
     ):
         if not isinstance(question, Question):
             raise TypeError("question must be a Question")
@@ -72,6 +77,21 @@ class QuestionDefinition:
         if subtopic is not None and not subtopic.strip():
             raise ValueError("subtopic cannot be empty")
 
+        if not isinstance(question_type, QuestionType):
+            raise TypeError("question_type must be a QuestionType")
+
+        if requirement is not None and not isinstance(requirement, str):
+            raise TypeError("requirement must be a string or None")
+        if requirement is not None and not requirement.strip():
+            raise ValueError("requirement cannot be empty")
+
+        if options is not None:
+            if not isinstance(options, list):
+                raise TypeError("options must be a list or None")
+
+            if not all(isinstance(option, Option) for option in options):
+                raise TypeError("options must contain only Option objects")
+
         self.question = question
         self.questionnaire = questionnaire
         self.title = title
@@ -82,3 +102,6 @@ class QuestionDefinition:
         self.geographical_relevance = list(geographical_relevance)
         self.topic = topic
         self.subtopic = subtopic
+        self.question_type = question_type
+        self.requirement = requirement
+        self.options = list(options) if options is not None else []
