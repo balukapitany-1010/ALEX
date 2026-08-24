@@ -32,6 +32,12 @@ def test_question_definition_can_be_created():
         topic = "teszt topic",
         subtopic = None,
         question_type = QuestionType.RADIO,
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
     )
 
     assert definition.question is question
@@ -59,6 +65,12 @@ def test_question_definition_rejects_invalid_question():
             topic="teszt topic",
             subtopic=None,
             question_type=QuestionType.RADIO,
+            options=[
+                Option(
+                    option_id="3737695_1",
+                    label="Igen",
+                )
+            ],
         )
 
 
@@ -81,6 +93,12 @@ def test_question_definition_rejects_invalid_questionnaire():
             topic="teszt topic",
             subtopic=None,
             question_type=QuestionType.RADIO,
+            options=[
+                Option(
+                    option_id="3737695_1",
+                    label="Igen",
+                )
+            ],
         )
 
 
@@ -110,6 +128,12 @@ def test_question_definition_rejects_empty_title():
             topic="teszt topic",
             subtopic=None,
             question_type=QuestionType.RADIO,
+            options=[
+                Option(
+                    option_id="3737695_1",
+                    label="Igen",
+                )
+            ],
         )
 
 def test_question_definition_has_category():
@@ -134,6 +158,12 @@ def test_question_definition_has_category():
         topic="teszt topic",
         subtopic=None,
         question_type=QuestionType.RADIO,
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
     )
 
     assert definition.category == QuestionCategory.E
@@ -161,6 +191,12 @@ def test_question_definition_rejects_invalid_category():
             topic="teszt topic",
             subtopic=None,
             question_type=QuestionType.RADIO,
+            options=[
+                Option(
+                    option_id="3737695_1",
+                    label="Igen",
+                )
+            ],
         )
 
 def test_question_definition_has_subject():
@@ -185,6 +221,12 @@ def test_question_definition_has_subject():
         topic="teszt topic",
         subtopic=None,
         question_type=QuestionType.RADIO,
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
     )
     assert definition.subject == "Környezeti fenntarthatóság"
 
@@ -211,6 +253,12 @@ def test_question_definition_rejects_empty_subjects():
             topic="teszt topic",
             subtopic=None,
             question_type=QuestionType.RADIO,
+            options=[
+                Option(
+                    option_id="3737695_1",
+                    label="Igen",
+                )
+            ],
         )
 
 def test_question_definition_has_organization_metadata():
@@ -245,6 +293,12 @@ def test_question_definition_has_organization_metadata():
         topic="teszt topic",
         subtopic=None,
         question_type=QuestionType.RADIO,
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
     )
 
     assert definition.organization == "SZTFH"
@@ -286,6 +340,12 @@ def test_question_definition_rejects_invalid_organization_sizes():
             topic="teszt topic",
             subtopic=None,
             question_type=QuestionType.RADIO,
+            options=[
+                Option(
+                    option_id="3737695_1",
+                    label="Igen",
+                )
+            ],
         )
 def test_question_definition_rejects_invalid_geographical_relevance():
     question = Question(
@@ -312,6 +372,12 @@ def test_question_definition_rejects_invalid_geographical_relevance():
             topic="teszt topic",
             subtopic=None,
             question_type=QuestionType.RADIO,
+            options=[
+                Option(
+                    option_id="3737695_1",
+                    label="Igen",
+                )
+            ],
         )
 def test_question_definition_has_topic_subtopic():
     question = Question(
@@ -335,6 +401,12 @@ def test_question_definition_has_topic_subtopic():
         topic = "Energia",
         subtopic = "Megújuló energia",
         question_type=QuestionType.RADIO,
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
     )
     assert definition.topic == "Energia"
     assert definition.subtopic == "Megújuló energia"
@@ -361,6 +433,12 @@ def test_question_definition_subtopic_van_be_none():
         geographical_relevance=["HU/EGT/Switzerland"],
         topic = "Energia",
         question_type=QuestionType.RADIO,
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
 
     )
     assert definition.subtopic is None
@@ -388,6 +466,12 @@ def test_question_definition_has_question_type():
         geographical_relevance=["HU/EGT/Switzerland"],
         topic="Energia",
         question_type=QuestionType.RADIO,
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
     )
 
     assert definition.question_type == QuestionType.RADIO
@@ -441,6 +525,12 @@ def test_question_definition_has_requirement():
         topic="Energia",
         question_type=QuestionType.RADIO,
         requirement = "Teszt követelmény",
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
     )
     assert  definition.requirement == "Teszt követelmény"
 
@@ -465,6 +555,12 @@ def test_question_definition_requirement_can_be_none():
         geographical_relevance=["HU/EGT/Switzerland"],
         topic="Energia",
         question_type=QuestionType.RADIO,
+        options=[
+            Option(
+                option_id="3737695_1",
+                label="Igen",
+            )
+        ],
 
     )
     assert definition.requirement is None
@@ -483,13 +579,11 @@ def test_question_definition_can_have_options():
 
     yes_option = Option(
         option_id="3737695_1",
-        value="yes",
         label="Igen",
     )
 
     no_option = Option(
         option_id="3737695_2",
-        value="no",
         label="Nem",
     )
 
@@ -562,3 +656,92 @@ def test_question_definition_rejects_invalid_option():
             question_type=QuestionType.RADIO,
             options=["Igen", "Nem"],
         )
+
+def test_question_definition_can_have_options():
+    question = Question(
+        question_id="3737695",
+        question_code="E1",
+    )
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+    yes_option = Option(
+        option_id="3737695_1",
+        label="Igen",
+    )
+    no_option = Option(
+        option_id="3737695_2",
+        label="Nem",
+    )
+    definition = QuestionDefinition(
+        question=question,
+        questionnaire=questionnaire,
+        title = "Teszt kérdés",
+        category=QuestionCategory.E,
+        subject = "Környezeti fenntarthatóság",
+        organization = "SZTFH",
+        organization_sizes=["Large"],
+        geographical_relevance=["HU/EGT/Switzerland"],
+        topic="Energia",
+        question_type=QuestionType.RADIO,
+
+        options=[yes_option, no_option],
+
+    )
+    assert definition.options == [yes_option, no_option]
+
+
+def test_radio_question_requires_option():
+    question = Question(
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    with pytest.raises(ValueError):
+        QuestionDefinition(
+            question=question,
+            questionnaire=questionnaire,
+            title="Teszt kérdés",
+            category=QuestionCategory.E,
+            subject="Környezeti Fenntarthatóság",
+            organization="SZTFH",
+            organization_sizes=["Large"],
+            geographical_relevance=["HU/EGT/Switzerland"],
+            topic="Energia",
+            question_type=QuestionType.RADIO,
+        )
+
+def test_text_question_does_not_require_options():
+    question = Question(
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    definition = QuestionDefinition(
+        question=question,
+        questionnaire=questionnaire,
+        title="Teszt kérdés",
+        category=QuestionCategory.E,
+        subject="Környezeti Fenntarthatóság",
+        organization="SZTFH",
+        organization_sizes=["Large"],
+        geographical_relevance=["HU/EGT/Switzerland"],
+        topic="Energia",
+        question_type=QuestionType.TEXT,
+    )
+
+    assert definition.options == []
