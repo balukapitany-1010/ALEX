@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from alex.esg.domain.question_definition import QuestionDefinition
 from alex.esg.domain.question_type import QuestionType
 from alex.esg.domain.submission import Submission
@@ -11,6 +13,7 @@ class Answer:
         question_definition: QuestionDefinition,
         selected_options: list[Option] | None = None,
         text_value: str | None = None,
+        number_value: int | float | None = None,
     ):
         if not isinstance(submission, Submission):
             raise TypeError("submission must be a Submission")
@@ -56,8 +59,7 @@ class Answer:
             }
 
             if (
-                question_definition.question_type
-                in single_selection_types
+                question_definition.question_type in single_selection_types
                 and len(selected_options) > 1
             ):
                 raise ValueError(
@@ -107,6 +109,36 @@ class Answer:
                     "questions cannot have text_value"
                 )
 
+        # number_value validáció
+        if number_value is not None:
+            if isinstance(number_value, bool) or not isinstance(
+                number_value,
+                (int, float),
+            ):
+                raise TypeError(
+                    "number_value must be an int, float or None"
+                )
+
+        number_value_types = {
+            QuestionType.NUMBER,
+            QuestionType.MIXED,
+        }
+
+        if (
+            number_value is not None
+            and question_definition.question_type not in number_value_types
+        ):
+            raise ValueError(
+                f"{question_definition.question_type.value} "
+                "questions cannot have number_value"
+            )
+
+        if (submission.questionnaire.questionnaire_key != question_definition.questionnaire.questionnaire_key):
+            raise ValueError(
+                "question_definition must belong to the same questionnaire as the submission"
+            )
+
+        # Objektum állapotának beállítása
         self.submission = submission
         self.question_definition = question_definition
         self.selected_options = (
@@ -115,3 +147,39 @@ class Answer:
             else []
         )
         self.text_value = text_value
+        self.number_value = number_value
+        self.answer_id = str(uuid4())
+
+    @property
+    def is_answered(self) -> bool:
+        if self.question_definition.question_type in {
+            QuestionType.RADIO,
+            QuestionType.DROPDOWN,
+            QuestionType.CHECKBOX,
+        }:
+            return bool(self.selected_options)
+
+        if self.question_definition.question_type in {
+            QuestionType.TEXT,
+            QuestionType.COMMENT,
+        }:
+            return self.text_value is not None
+
+        if self.question_definition.question_type == QuestionType.NUMBER:
+            return self.number_value is not None
+
+        if self.question_definition.question_type == QuestionType.MIXED:
+            return (
+                bool(self.selected_options)
+                or self.text_value is not None
+                or self.number_value is not None
+            )
+
+        return False
+
+    @property
+    def answer_key(self) -> str:
+        return (
+            f"{self.submission.submission_id}:"
+            f"{self.question_definition.question.question_id}"
+        )
