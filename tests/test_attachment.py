@@ -692,3 +692,88 @@ def test_submission_level_attachment_cannot_be_reassigned_to_question():
         attachment.question_definition = definition
 
     assert attachment.question_definition is None
+
+def test_submission_can_remove_attachment():
+    submission, _ = create_submission()
+
+    attachment = Attachment(
+        submission=submission,
+        file_name="teszt.pdf",
+        storage_reference="ATT_TEST_001",
+    )
+
+    submission.add_attachment(attachment)
+
+    removed = submission.remove_attachment(
+        attachment.attachment_id
+    )
+
+    assert removed is attachment
+    assert submission.attachments == ()
+    assert submission.has_attachment(
+        attachment.attachment_id
+    ) is False
+
+def test_remove_attachment_removes_only_requested_attachment():
+    submission, _ = create_submission()
+
+    attachment1 = Attachment(
+        submission=submission,
+        file_name="elso.pdf",
+        storage_reference="ATT_TEST_001",
+    )
+
+    attachment2 = Attachment(
+        submission=submission,
+        file_name="masodik.pdf",
+        storage_reference="ATT_TEST_002",
+    )
+
+    submission.add_attachment(attachment1)
+    submission.add_attachment(attachment2)
+
+    submission.remove_attachment(
+        attachment1.attachment_id
+    )
+
+    assert submission.attachments == (
+        attachment2,
+    )
+def test_submission_rejects_removing_missing_attachment():
+    submission, _ = create_submission()
+
+    with pytest.raises(
+        ValueError,
+        match="attachment does not exist",
+    ):
+        submission.remove_attachment(
+            "missing-attachment"
+        )
+def test_remove_attachment_rejects_invalid_attachment_id():
+    submission, _ = create_submission()
+
+    with pytest.raises(TypeError):
+        submission.remove_attachment(123)
+def test_remove_attachment_rejects_empty_attachment_id():
+    submission, _ = create_submission()
+
+    with pytest.raises(ValueError):
+        submission.remove_attachment("")
+def test_remove_attachment_updates_submission_updated_at():
+    submission, _ = create_submission()
+
+    attachment = Attachment(
+        submission=submission,
+        file_name="teszt.pdf",
+        storage_reference="ATT_TEST_001",
+    )
+
+    submission.add_attachment(attachment)
+
+    previous_updated_at = submission.updated_at
+
+    submission.remove_attachment(
+        attachment.attachment_id
+    )
+
+    assert submission.updated_at >= previous_updated_at

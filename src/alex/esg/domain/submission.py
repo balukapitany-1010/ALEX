@@ -81,6 +81,26 @@ class Submission:
         self._answers.append(answer)
         self.updated_at = datetime.now(timezone.utc)
 
+    def remove_attachment(
+            self,
+            attachment_id: str,
+    ) -> "Attachment":
+        if not isinstance(attachment_id, str):
+            raise TypeError("attachment_id must be a string")
+
+        if not attachment_id.strip():
+            raise ValueError("attachment_id cannot be empty")
+
+        for attachment in self._attachments:
+            if attachment.attachment_id == attachment_id:
+                self._attachments.remove(attachment)
+                self._updated_at = datetime.now(timezone.utc)
+                return attachment
+
+        raise ValueError(
+            "attachment does not exist in the Submission"
+        )
+
 
 
     @property
