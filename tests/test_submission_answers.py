@@ -190,3 +190,285 @@ def test_submission_rejects_invalid_answer():
 
     with pytest.raises(TypeError):
         submission.add_answer("Nem Answer objektum")
+
+def test_submission_can_get_answer_by_question_id():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+        text_value="Teszt válasz",
+    )
+
+    submission.add_answer(answer)
+
+    result = submission.get_answer("3737695")
+
+    assert result is answer
+
+
+def test_submission_get_answer_returns_none_if_question_not_found():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    result = submission.get_answer("9999999")
+
+    assert result is None
+
+
+def test_submission_get_answer_rejects_empty_question_id():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    with pytest.raises(ValueError):
+        submission.get_answer("")
+
+def test_submission_answered_count_is_zero_when_no_answers_exist():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    assert submission.answered_count == 0
+
+
+def test_submission_answered_count_ignores_empty_answers():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition1 = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    definition2 = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737696",
+        question_code="E2",
+    )
+
+    answer1 = Answer(
+        submission=submission,
+        question_definition=definition1,
+        text_value="Kitöltött válasz",
+    )
+
+    answer2 = Answer(
+        submission=submission,
+        question_definition=definition2,
+    )
+
+    submission.add_answer(answer1)
+    submission.add_answer(answer2)
+
+    assert submission.answered_count == 1
+
+
+def test_submission_answered_count_counts_all_answered_questions():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition1 = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    definition2 = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737696",
+        question_code="E2",
+    )
+
+    definition3 = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737697",
+        question_code="E3",
+    )
+
+    answer1 = Answer(
+        submission=submission,
+        question_definition=definition1,
+        text_value="Első válasz",
+    )
+
+    answer2 = Answer(
+        submission=submission,
+        question_definition=definition2,
+        text_value="Második válasz",
+    )
+
+    answer3 = Answer(
+        submission=submission,
+        question_definition=definition3,
+    )
+
+    submission.add_answer(answer1)
+    submission.add_answer(answer2)
+    submission.add_answer(answer3)
+
+    assert submission.answered_count == 2
+
+def test_submission_answered_answers_returns_only_answered_answers():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition1 = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    definition2 = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737696",
+        question_code="E2",
+    )
+
+    definition3 = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737697",
+        question_code="E3",
+    )
+
+    answer1 = Answer(
+        submission=submission,
+        question_definition=definition1,
+        text_value="Első válasz",
+    )
+
+    answer2 = Answer(
+        submission=submission,
+        question_definition=definition2,
+    )
+
+    answer3 = Answer(
+        submission=submission,
+        question_definition=definition3,
+        text_value="Harmadik válasz",
+    )
+
+    submission.add_answer(answer1)
+    submission.add_answer(answer2)
+    submission.add_answer(answer3)
+
+    assert submission.answered_answers == (
+        answer1,
+        answer3,
+    )
+def test_submission_answered_answers_is_empty_when_no_answer_is_answered():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+    )
+
+    submission.add_answer(answer)
+
+    assert submission.answered_answers == ()
+    assert submission.answered_count == 0
+
+def test_submission_has_answer_returns_true_when_answer_exists():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+    )
+
+    submission.add_answer(answer)
+
+    assert submission.has_answer("3737695") is True
+
+
+def test_submission_has_answer_returns_false_when_answer_does_not_exist():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    assert submission.has_answer("3737695") is False
+
+
+def test_submission_has_answer_rejects_empty_question_id():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    with pytest.raises(ValueError):
+        submission.has_answer("")
+
+def test_is_question_answered_returns_true_for_answered_question():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+        text_value="Kitöltött válasz",
+    )
+
+    submission.add_answer(answer)
+
+    assert submission.is_question_answered("3737695") is True
+
+
+def test_is_question_answered_returns_false_for_empty_answer():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_definition(
+        questionnaire=questionnaire,
+        question_id="3737695",
+        question_code="E1",
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+    )
+
+    submission.add_answer(answer)
+
+    assert submission.has_answer("3737695") is True
+    assert submission.is_question_answered("3737695") is False
+
+
+def test_is_question_answered_returns_false_when_answer_does_not_exist():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    assert submission.has_answer("3737695") is False
+    assert submission.is_question_answered("3737695") is False
+
+
+def test_is_question_answered_rejects_empty_question_id():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    with pytest.raises(ValueError):
+        submission.is_question_answered("")

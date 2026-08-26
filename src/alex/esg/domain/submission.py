@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from alex.esg.domain.questionnaire import Questionnaire
 from alex.esg.domain.submission_status import SubmissionStatus
 from alex.esg.domain.supply_chain_relation import SupplyChainRelation
@@ -7,9 +9,10 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from alex.esg.domain.answer import Answer
+    from alex.esg.domain.attachment import Attachment
 
 class Submission:
-    def __init__(self, relation: SupplyChainRelation, submitter: Company, questionnaire: Questionnaire, period: str,submitted_at: datetime | None = None, status: SubmissionStatus = SubmissionStatus.SUBMITTED,):
+    def __init__(self, relation: SupplyChainRelation, submitter: Company, questionnaire: Questionnaire, period: str,submitted_at: datetime | None = None, status: SubmissionStatus = SubmissionStatus.SUBMITTED, organization_size:str | None = None):
         if not isinstance(relation, SupplyChainRelation):
             raise TypeError("relation must be supplychain relation")
 
@@ -27,6 +30,12 @@ class Submission:
             raise TypeError("status must be a SubmissionStatus")
         if not isinstance(questionnaire, Questionnaire):
             raise TypeError("questionnaire must be a Questionnaire")
+        if (
+            organization_size is not None and not isinstance(organization_size, str)
+        ):
+            raise TypeError("organization_size must be a string or None")
+        if (organization_size is not None and not organization_size.strip()):
+            raise ValueError("organization_size cannot be empty")
 
 
 
@@ -42,6 +51,8 @@ class Submission:
         self._status = status
         self.questionnaire = questionnaire
         self._answers: list[Answer] = []
+        self._attachments: list[Attachment] = []
+        self.organization_size = organization_size
 
     def add_answer(self, answer: "Answer") -> None:
         from alex.esg.domain.answer import Answer
@@ -65,8 +76,43 @@ class Submission:
             if existing_question_id == question_id:
                 raise ValueError("an Answer for this Qustion alredy exists in the Submission")
 
+
+
         self._answers.append(answer)
         self.updated_at = datetime.now(timezone.utc)
+
+
+
+    @property
+    def submission_attachments(self) -> tuple[Attachment, ...]:
+        return tuple(attachment for attachment in self._attachments if attachment.question_definition is None)
+
+    @property
+    def question_attachments(self) -> tuple:
+        return tuple(
+            attachment
+            for attachment in self._attachments
+            if attachment.question_definition is not None
+        )
+
+    def get_attachments_for_question(self, question_id: str) -> tuple:
+        if not isinstance(question_id, str):
+            raise TypeError("question_id must be a string")
+
+        if not question_id.strip():
+            raise ValueError("question_id cannot be empty")
+
+        return tuple(
+            attachment
+            for attachment in self._attachments
+            if (
+                    attachment.question_definition is not None
+                    and attachment.question_definition.question.question_id
+                    == question_id
+            )
+        )
+
+
 
     @property
     def status(self) -> SubmissionStatus:
@@ -86,4 +132,81 @@ class Submission:
     @property
     def answers(self) -> tuple["Answer", ...]:
         return tuple(self._answers)
+
+    def get_answer(self, question_id: str) -> Answer | None:
+        if not isinstance(question_id, str):
+            raise TypeError("question_id must be a string")
+
+        if not question_id.strip():
+            raise ValueError("question_id cannot be empty")
+
+        for answer in self._answers:
+            if (
+                    answer.question_definition.question.question_id
+                    == question_id
+            ):
+                return answer
+
+        return None
+    def has_answer(self, question_id: str) -> bool:
+        return self.get_answer(question_id) is not None
+    def is_question_answered(self, question_id: str) -> bool:
+        answer = self.get_answer(question_id)
+        if answer is None:
+            return False
+        return answer.is_answered
+    @property
+    def answered_count(self) -> int:
+        return sum (
+            1 for answer in self._answers if answer.is_answered
+        )
+
+    @property
+    def answered_answers(self) -> tuple["Answer", ...]:
+        return tuple(answer for answer in self._answers if answer.is_answered)
+
+    @property
+    def attachments(self) -> tuple["Attachment", ...]:
+        return tuple(self._attachments)
+
+    def add_attachment(self, attachment: "Attachment") -> None:
+        from alex.esg.domain.attachment import Attachment
+
+        if not isinstance(attachment, Attachment):
+            raise TypeError("attachment must be an Attachment")
+
+        if attachment.submission is not self:
+            raise ValueError(
+                "attachment must belong to this Submission"
+            )
+
+        for existing_attachment in self._attachments:
+            if existing_attachment.attachment_id == attachment.attachment_id:
+                raise ValueError(
+                    "attachment already exists in the Submission"
+                )
+
+        self._attachments.append(attachment)
+        self.updated_at = datetime.now(timezone.utc)
+
+    def get_attachment(
+            self,
+            attachment_id: str,
+    ) -> Attachment | None:
+        if not isinstance(attachment_id, str):
+            raise TypeError("attachment_id must be a string")
+
+        if not attachment_id.strip():
+            raise ValueError("attachment_id cannot be empty")
+
+        for attachment in self._attachments:
+            if attachment.attachment_id == attachment_id:
+                return attachment
+
+        return None
+
+    def has_attachment(self, attachment_id: str) -> bool:
+        return self.get_attachment(attachment_id) is not None
+
+
 

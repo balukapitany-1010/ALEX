@@ -618,3 +618,99 @@ def test_submission_rejects_invalid_questionnaire():
             questionnaire="SZTFH 2.1",
             period="2026-Q2",
         )
+
+def test_submission_can_have_organization_size():
+    requester = Company(
+        name="Megrendelő Kft.",
+        tax_number="11111111-1-11",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-22",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    submission = Submission(
+        relation=relation,
+        submitter=supplier,
+        questionnaire=questionnaire,
+        period="2026-Q2",
+        organization_size="Large",
+    )
+
+    assert submission.organization_size == "Large"
+
+
+def test_submission_organization_size_can_be_none():
+    requester = Company(
+        name="Megrendelő Kft.",
+        tax_number="11111111-1-11",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-22",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    submission = Submission(
+        relation=relation,
+        submitter=supplier,
+        questionnaire=questionnaire,
+        period="2026-Q2",
+    )
+
+    assert submission.organization_size is None
+
+
+def test_submission_rejects_invalid_organization_size():
+    requester = Company(
+        name="Megrendelő Kft.",
+        tax_number="11111111-1-11",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-22",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    with pytest.raises(TypeError):
+        Submission(
+            relation=relation,
+            submitter=supplier,
+            questionnaire=questionnaire,
+            period="2026-Q2",
+            organization_size=123,
+        )
