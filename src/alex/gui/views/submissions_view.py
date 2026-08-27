@@ -6,19 +6,33 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QPushButton,
+    QHBoxLayout,
+    QMessageBox,
+    QDialog,
 )
 
 from alex.esg.services.submission_service import SubmissionService
+from alex.gui.dialogs.submission_dialog import SubmissionDialog
+from alex.esg.services.questionnaire_service import QuestionnaireService
+from alex.esg.services.submission_service import SubmissionService
+from alex.esg.services.supply_chain_relation_service import (SupplyChainRelationService,)
 
 
 class SubmissionsView(QWidget):
     def __init__(
         self,
         submission_service: SubmissionService,
+        relation_service: SupplyChainRelationService,
+        questionnaire_service: QuestionnaireService,
     ) -> None:
         super().__init__()
 
         self._submission_service = submission_service
+        self._relation_service = relation_service
+        self._questionnaire_service = questionnaire_service
+
+        self._add_button = QPushButton("+ Új tesztbeküldés")
 
         self._search_input = QLineEdit()
         self._table = QTableWidget()
@@ -38,9 +52,21 @@ class SubmissionsView(QWidget):
         title.setFont(font)
 
         main_layout.addWidget(title)
-
+        toolbar_layout = QHBoxLayout()
         self._search_input.setPlaceholderText(
             "Keresés beszállító, kötelezett vagy időszak alapján..."
+        )
+
+        toolbar_layout.addWidget(
+            self._search_input
+        )
+
+        toolbar_layout.addWidget(
+            self._add_button
+        )
+
+        main_layout.addLayout(
+            toolbar_layout
         )
 
         main_layout.addWidget(
@@ -111,6 +137,46 @@ class SubmissionsView(QWidget):
         self._search_input.textChanged.connect(
             self._filter_submissions
         )
+        self._add_button.clicked.connect(
+            self._open_add_submission_dialog
+        )
+
+    def _open_add_submission_dialog(self) -> None:
+        relations = (
+            self._relation_service.list_relations()
+        )
+
+        questionnaires = (
+            self._questionnaire_service.list_questionnaires()
+        )
+
+        dialog = SubmissionDialog(
+            relations=relations,
+            questionnaires=questionnaires,
+            parent=self,
+        )
+
+        result = dialog.exec()
+
+        if result != QDialog.DialogCode.Accepted:
+            return
+
+        try:
+            self._submission_service.create_submission(
+                relation=dialog.relation,
+                submitter=dialog.submitter,
+                questionnaire=dialog.questionnaire,
+                period=dialog.period,
+            )
+        except (TypeError, ValueError) as error:
+            QMessageBox.critical(
+                self,
+                "Beküldés létrehozási hiba",
+                str(error),
+            )
+            return
+
+        self._refresh_table()
 
     def _refresh_table(self) -> None:
         self._table.setRowCount(0)

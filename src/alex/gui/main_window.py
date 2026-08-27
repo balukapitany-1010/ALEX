@@ -17,18 +17,18 @@ from alex.gui.views.companies_views import CompaniesView
 from alex.gui.views.suppliers_view import SuppliersView
 from alex.esg.services.submission_service import SubmissionService
 from alex.gui.views.submissions_view import SubmissionsView
+from alex.esg.services.questionnaire_service import QuestionnaireService
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
 
-        # Service-ek egyszer jönnek létre,
-        # és ugyanazokat adjuk át a nézeteknek.
         self._company_service = CompanyService()
         self._supplier_service = SupplierService()
         self._relation_service = SupplyChainRelationService()
         self._submission_service = SubmissionService()
+        self._questionnaire_service = QuestionnaireService()
 
         self.setWindowTitle("ALEX")
         self.resize(1200, 750)
@@ -63,6 +63,11 @@ class MainWindow(QMainWindow):
                 company_service=self._company_service,
             )
         )
+        self._questionnaire_service.create_questionnaire(
+            questionnaire_code="SZTFH-ESG",
+            spec_version="2.1",
+            locale="hu",
+        )
 
         self._content.addWidget(
             SuppliersView(
@@ -74,7 +79,9 @@ class MainWindow(QMainWindow):
 
         self._content.addWidget(
             SubmissionsView(
-                submission_service=self._submission_service
+                submission_service=self._submission_service,
+                relation_service=self._relation_service,
+                questionnaire_service=self._questionnaire_service,
             )
         )
 
