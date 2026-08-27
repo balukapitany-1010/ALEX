@@ -1,6 +1,3 @@
-from alex.esg.services.company_service import CompanyService
-from alex.gui.views.companies_views import CompaniesView
-
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -11,12 +8,27 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from alex.esg.services.company_service import CompanyService
+from alex.esg.services.supplier_service import SupplierService
+from alex.esg.services.supply_chain_relation_service import (
+    SupplyChainRelationService,
+)
+from alex.gui.views.companies_views import CompaniesView
+from alex.gui.views.suppliers_view import SuppliersView
+from alex.esg.services.submission_service import SubmissionService
+from alex.gui.views.submissions_view import SubmissionsView
+
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
 
+        # Service-ek egyszer jönnek létre,
+        # és ugyanazokat adjuk át a nézeteknek.
         self._company_service = CompanyService()
+        self._supplier_service = SupplierService()
+        self._relation_service = SupplyChainRelationService()
+        self._submission_service = SubmissionService()
 
         self.setWindowTitle("ALEX")
         self.resize(1200, 750)
@@ -48,43 +60,67 @@ class MainWindow(QMainWindow):
     def _setup_content(self) -> None:
         self._content.addWidget(
             CompaniesView(
-                company_service=self._company_service
+                company_service=self._company_service,
             )
         )
 
         self._content.addWidget(
-            self._create_placeholder_page("Beszállítók")
+            SuppliersView(
+                supplier_service=self._supplier_service,
+                company_service=self._company_service,
+                relation_service=self._relation_service,
+            )
         )
 
         self._content.addWidget(
-            self._create_placeholder_page("Beküldések")
+            SubmissionsView(
+                submission_service=self._submission_service
+            )
         )
 
         self._content.addWidget(
-            self._create_placeholder_page("Kérdőívek")
+            self._create_placeholder_page(
+                "Kérdőívek"
+            )
         )
 
         self._content.addWidget(
-            self._create_placeholder_page("Dokumentumok")
+            self._create_placeholder_page(
+                "Dokumentumok"
+            )
         )
 
         self._content.addWidget(
-            self._create_placeholder_page("Riportok")
+            self._create_placeholder_page(
+                "Riportok"
+            )
         )
 
         self._content.addWidget(
-            self._create_placeholder_page("Adatbázis")
+            self._create_placeholder_page(
+                "Adatbázis"
+            )
         )
 
     def _setup_layout(self) -> None:
         central_widget = QWidget()
 
-        layout = QHBoxLayout(central_widget)
+        layout = QHBoxLayout(
+            central_widget
+        )
 
-        layout.addWidget(self._navigation)
-        layout.addWidget(self._content, 1)
+        layout.addWidget(
+            self._navigation
+        )
 
-        self.setCentralWidget(central_widget)
+        layout.addWidget(
+            self._content,
+            1,
+        )
+
+        self.setCentralWidget(
+            central_widget
+        )
 
     def _connect_signals(self) -> None:
         self._navigation.currentRowChanged.connect(
@@ -92,20 +128,31 @@ class MainWindow(QMainWindow):
         )
 
     @staticmethod
-    def _create_placeholder_page(title: str) -> QWidget:
+    def _create_placeholder_page(
+        title: str,
+    ) -> QWidget:
         page = QWidget()
 
-        layout = QVBoxLayout(page)
+        layout = QVBoxLayout(
+            page
+        )
 
-        title_label = QLabel(title)
+        title_label = QLabel(
+            title
+        )
 
         font = title_label.font()
         font.setPointSize(20)
         font.setBold(True)
 
-        title_label.setFont(font)
+        title_label.setFont(
+            font
+        )
 
-        layout.addWidget(title_label)
+        layout.addWidget(
+            title_label
+        )
+
         layout.addStretch()
 
         return page
