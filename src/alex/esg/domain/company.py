@@ -1,7 +1,7 @@
 """Company domain model."""
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone
 
 
 class Company:
@@ -90,3 +90,23 @@ class Company:
             return
         self._country = new_country
         self.updated_at = datetime.now(UTC)
+
+    def update(
+            self,
+            *,
+            name: str,
+            country: str | None = None,
+    ) -> None:
+        if not isinstance(name, str):
+            raise TypeError("name must be a string.")
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("name cannot be empty.")
+        if country is not None:
+            if not isinstance(country, str):
+                raise TypeError("country must be a string or None.")
+            country = country.strip() or None
+
+        self._name = normalized_name
+        self._updated_at = datetime.now(timezone.utc)
+        self._country = country

@@ -1,5 +1,8 @@
 import time
 import unittest
+
+import pytest
+
 from src.alex.esg.domain.company import Company
 
 class TestCompany(unittest.TestCase):
@@ -160,6 +163,54 @@ class TestCompany(unittest.TestCase):
                 name="Minta kft.",
                 tax_number="----",
             )
+    def test_company_can_update_name_and_country(self) -> None:
+        company = Company(
+            name="Régi Kft.",
+            tax_number="12345678-2-41",
+            country="HU",
+        )
+        company.update(
+            name = "Új Kft.",
+            country = "AT",
+        )
+        assert company.name == "Új Kft."
+        assert company.country == "AT"
+
+    def test_company_update_changes_updated_at(self) -> None:
+        company = Company(
+            name="Teszt kft.",
+            tax_number="12345678-2-41",
+        )
+        previus_updated_at = company.updated_at
+        company.update(
+            name = "Módósított Kft.",
+            country = "HU",
+        )
+        assert company.updated_at >= previus_updated_at
+
+    def test_company_update_rejects_empty_name(self) -> None:
+        company = Company(
+            name="Teszt kft.",
+            tax_number="12345678-2-41",
+        )
+        with pytest.raises(ValueError, match="name cannot be empty"):
+            company.update(
+                name = "",
+                country = "HU",
+            )
+    def test_company_update_does_not_change_tax_number(self) -> None:
+        company = Company(
+            name="Teszt kft.",
+            tax_number="12345678-2-41",
+        )
+        original_tax_number = company.tax_number
+        original_company_key = company.company_key
+        company.update(
+            name = "Módósított kft.",
+            country = "HU",
+        )
+        assert company.tax_number == original_tax_number
+        assert company.company_key == original_company_key
 
 
 

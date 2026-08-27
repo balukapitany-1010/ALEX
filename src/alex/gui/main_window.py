@@ -1,4 +1,6 @@
+from alex.esg.services.company_service import CompanyService
 from alex.gui.views.companies_views import CompaniesView
+
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -13,6 +15,8 @@ from PySide6.QtWidgets import (
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+
+        self._company_service = CompanyService()
 
         self.setWindowTitle("ALEX")
         self.resize(1200, 750)
@@ -43,23 +47,31 @@ class MainWindow(QMainWindow):
 
     def _setup_content(self) -> None:
         self._content.addWidget(
-            CompaniesView()
+            CompaniesView(
+                company_service=self._company_service
+            )
         )
+
         self._content.addWidget(
             self._create_placeholder_page("Beszállítók")
         )
+
         self._content.addWidget(
             self._create_placeholder_page("Beküldések")
         )
+
         self._content.addWidget(
             self._create_placeholder_page("Kérdőívek")
         )
+
         self._content.addWidget(
             self._create_placeholder_page("Dokumentumok")
         )
+
         self._content.addWidget(
             self._create_placeholder_page("Riportok")
         )
+
         self._content.addWidget(
             self._create_placeholder_page("Adatbázis")
         )
