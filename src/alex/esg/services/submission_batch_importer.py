@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 from typing import Any
+from alex.esg.services.import_issue import (
+    ImportIssue,
+    ImportIssueSeverity,
+)
 
 from alex.esg.mappers.submission_header_mapper import (
     SubmissionHeaderData,
@@ -11,7 +15,23 @@ from alex.esg.mappers.submission_header_mapper import (
 class SubmissionBatchItemResult:
     index: int
     header: SubmissionHeaderData | None
-    errors: tuple[str, ...]
+    issues: tuple[ImportIssue, ...]
+
+    @property
+    def errors(self) -> tuple[str, ...]:
+        return tuple(
+            issue.message
+            for issue in self.issues
+            if issue.severity == ImportIssueSeverity.ERROR
+        )
+
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        return tuple(
+            issue.message
+            for issue in self.issues
+            if issue.severity == ImportIssueSeverity.WARNING
+        )
 
     @property
     def is_valid(self) -> bool:
@@ -88,61 +108,134 @@ class SubmissionBatchImporter:
         )
 
     def _inspect_submission(
-        self,
-        *,
-        index: int,
-        submission_data: Any,
+            self,
+            *,
+            index: int,
+            submission_data: Any,
     ) -> SubmissionBatchItemResult:
         if not isinstance(
-            submission_data,
-            dict,
+                submission_data,
+                dict,
         ):
             return SubmissionBatchItemResult(
                 index=index,
                 header=None,
-                errors=("submission must be an object",),
+                issues=(
+                    ImportIssue(
+                        severity=ImportIssueSeverity.ERROR,
+                        code="INVALID_SUBMISSION_STRUCTURE",
+                        message="submission must be an object",
+                    ),
+                ),
             )
 
         try:
-            header = self._header_mapper.map(submission_data)
+            header = self._header_mapper.map(
+                submission_data
+            )
+
         except (TypeError, ValueError) as error:
             return SubmissionBatchItemResult(
                 index=index,
                 header=None,
-                errors=(str(error),),
+                issues=(
+                    ImportIssue(
+                        severity=ImportIssueSeverity.ERROR,
+                        code="INVALID_SUBMISSION_HEADER",
+                        message=str(error),
+                    ),
+                ),
             )
 
-        errors = self._validate_header(header)
+        issues = self._validate_header(
+            header
+        )
 
         return SubmissionBatchItemResult(
             index=index,
             header=header,
-            errors=errors,
+            issues=issues,
         )
 
     @staticmethod
     def _validate_header(
-        header: SubmissionHeaderData,
-    ) -> tuple[str, ...]:
-        errors: list[str] = []
+            header: SubmissionHeaderData,
+    ) -> tuple[ImportIssue, ...]:
+        issues: list[ImportIssue] = []
 
         if header.supplier_company is None:
-            errors.append("supplier company is missing")
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.ERROR,
+                    code="SUPPLIER_COMPANY_MISSING",
+                    message="supplier company is missing",
+                )
+            )
 
         if header.supplier_tax_number is None:
-            errors.append("supplier tax number is missing")
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.ERROR,
+                    code="SUPPLIER_TAX_NUMBER_MISSING",
+                    message="supplier tax number is missing",
+                )
+            )
 
         if header.requester_company is None:
-            errors.append("requester company is missing")
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.ERROR,
+                    code="REQUESTER_COMPANY_MISSING",
+                    message="requester company is missing",
+                )
+            )
 
         if header.requester_tax_number is None:
-            errors.append("requester tax number is missing")
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.ERROR,
+                    code="REQUESTER_TAX_NUMBER_MISSING",
+                    message="requester tax number is missing",
+                )
+            )
 
         if header.period is None:
-            errors.append("submission period is missing")
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.ERROR,
+                    code="SUBMISSION_PERIOD_MISSING",
+                    message="submission period is missing",
+                )
+            )
 
-        return tuple(errors)
+        if header.respondent_id is None:
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.WARNING,
+                    code="RESPONDENT_ID_MISSING",
+                    message="respondent id is missing",
+                )
+            )
 
+        if header.respondent_mp_id is None:
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.WARNING,
+                    code="RESPONDENT_MP_ID_MISSING",
+                    message="respondent MP id is missing",
+                )
+            )
+
+        if header.org_size is None:
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.WARNING,
+                    code="ORG_SIZE_MISSING",
+                    message="organization size is missing",
+                )
+            )
+
+        return tuple(issues)
     @staticmethod
     def _required_string(
         data: dict[str, Any],
