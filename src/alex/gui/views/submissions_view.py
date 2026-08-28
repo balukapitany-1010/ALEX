@@ -12,11 +12,14 @@ from PySide6.QtWidgets import (
     QDialog,
 )
 
+from alex.esg.domain.submission import Submission
+from alex.gui.dialogs.submission_details_dialog import SubmissionDetailsDialog
 from alex.esg.services.submission_service import SubmissionService
 from alex.gui.dialogs.submission_dialog import SubmissionDialog
 from alex.esg.services.questionnaire_service import QuestionnaireService
 from alex.esg.services.submission_service import SubmissionService
 from alex.esg.services.supply_chain_relation_service import (SupplyChainRelationService,)
+from alex.esg.services.test_data_service import add_test_answers
 
 
 class SubmissionsView(QWidget):
@@ -27,6 +30,8 @@ class SubmissionsView(QWidget):
         questionnaire_service: QuestionnaireService,
     ) -> None:
         super().__init__()
+        self._open_button = QPushButton("Megnyitás")
+        self._open_button.setEnabled(False)
 
         self._submission_service = submission_service
         self._relation_service = relation_service
@@ -52,9 +57,17 @@ class SubmissionsView(QWidget):
         title.setFont(font)
 
         main_layout.addWidget(title)
+
+
         toolbar_layout = QHBoxLayout()
+
+
         self._search_input.setPlaceholderText(
             "Keresés beszállító, kötelezett vagy időszak alapján..."
+        )
+
+        toolbar_layout.addWidget(
+            self._open_button
         )
 
         toolbar_layout.addWidget(
@@ -140,6 +153,56 @@ class SubmissionsView(QWidget):
         self._add_button.clicked.connect(
             self._open_add_submission_dialog
         )
+        self._table.itemSelectionChanged.connect(
+            self._update_button_state
+        )
+        self._open_button.clicked.connect(
+            self._open_selected_submission
+        )
+        self._table.cellDoubleClicked.connect(
+            self._open_submission_from_double_click
+        )
+    def _update_button_state(self) -> None:
+        has_selection = bool(self._table.selectionModel().selectedRows())
+        self._open_button.setEnabled(has_selection)
+
+    def _get_selected_submission(self) -> Submission | None:
+        selected_rows = (self._table.selectionModel().selectedRows())
+        if not selected_rows:
+            return None
+        row = selected_rows[0].row()
+        submission_id_item = self._table.item(row, 0,)
+        if submission_id_item is None:
+            return None
+        return self._submission_service.get_by_id(submission_id_item.text())
+
+    def _open_selected_submission(self) -> None:
+        submission = self._get_selected_submission()
+        if submission is None:
+            return
+        dialog = SubmissionDetailsDialog(
+            submission = submission,
+            parent = self,
+        )
+        dialog.exec()
+
+    def _open_submission_from_double_click(
+            self,
+            row: int,
+            column: int,
+    ) -> None:
+        submission_id_item = self._table.item(row, 0,)
+        if submission_id_item is None:
+            return
+        submission = self._submission_service.get_by_id(submission_id_item.text())
+        if submission is None:
+            return
+        dialog = SubmissionDetailsDialog(
+            submission = submission,
+            parent = self,
+        )
+        dialog.exec()
+
 
     def _open_add_submission_dialog(self) -> None:
         relations = (
@@ -162,12 +225,15 @@ class SubmissionsView(QWidget):
             return
 
         try:
-            self._submission_service.create_submission(
+            submission = self._submission_service.create_submission(
                 relation=dialog.relation,
                 submitter=dialog.submitter,
                 questionnaire=dialog.questionnaire,
                 period=dialog.period,
             )
+
+            add_test_answers(submission)
+
         except (TypeError, ValueError) as error:
             QMessageBox.critical(
                 self,

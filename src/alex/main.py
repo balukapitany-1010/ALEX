@@ -8,7 +8,7 @@ def main() -> int:
 
     window = MainWindow()
     window.show()
-    return app.exec_()
+    return app.exec()
 
 if __name__ == '__main__':
     raise SystemExit(main())

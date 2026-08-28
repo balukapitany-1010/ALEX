@@ -94,7 +94,7 @@ class Submission:
         for attachment in self._attachments:
             if attachment.attachment_id == attachment_id:
                 self._attachments.remove(attachment)
-                self._updated_at = datetime.now(timezone.utc)
+                self.updated_at = datetime.now(timezone.utc)
                 return attachment
 
         raise ValueError(
