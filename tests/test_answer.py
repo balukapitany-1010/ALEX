@@ -11,6 +11,7 @@ from alex.esg.domain.questionnaire import Questionnaire
 from alex.esg.domain.submission import Submission
 from alex.esg.domain.supplier import Supplier
 from alex.esg.domain.supply_chain_relation import SupplyChainRelation
+from alex.esg.domain.answer_value import AnswerValue
 
 def test_answer_connects_submission_and_question():
     requester = Company(
@@ -2699,3 +2700,146 @@ def test_answer_updated_at_cannot_be_changed_directly():
     with pytest.raises(AttributeError):
         answer.updated_at = datetime.now()
         assert answer.updated_at == original_updated_at
+
+def test_answer_can_have_answer_values():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_question_definition(
+        questionnaire=questionnaire,
+        question_type=QuestionType.MIXED,
+    )
+
+    value = AnswerValue(
+        field_type="text",
+        text_value="Teszt érték",
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+        values=[value],
+    )
+
+    assert answer.values == (value,)
+
+
+def test_answer_rejects_invalid_values():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_question_definition(
+        questionnaire=questionnaire,
+        question_type=QuestionType.MIXED,
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="values must be a list or None",
+    ):
+        Answer(
+            submission=submission,
+            question_definition=definition,
+            values="invalid",
+        )
+
+    with pytest.raises(
+        TypeError,
+        match="values must contain only AnswerValue objects",
+    ):
+        Answer(
+            submission=submission,
+            question_definition=definition,
+            values=["invalid"],
+        )
+
+
+def test_answer_can_add_value():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_question_definition(
+        questionnaire=questionnaire,
+        question_type=QuestionType.MIXED,
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+    )
+
+    value = AnswerValue(
+        field_type="number",
+        number_value=42,
+    )
+
+    answer.add_value(value)
+
+    assert answer.values == (value,)
+
+
+def test_answer_rejects_invalid_added_value():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_question_definition(
+        questionnaire=questionnaire,
+        question_type=QuestionType.MIXED,
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="value must be an AnswerValue",
+    ):
+        answer.add_value("invalid")
+
+
+def test_answer_value_makes_answer_answered():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_question_definition(
+        questionnaire=questionnaire,
+        question_type=QuestionType.MIXED,
+    )
+
+    value = AnswerValue(
+        field_type="text",
+        text_value="Van válasz",
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+        values=[value],
+    )
+
+    assert answer.is_answered is True
+
+
+def test_empty_answer_values_do_not_make_answer_answered():
+    questionnaire = create_questionnaire()
+    submission = create_submission(questionnaire)
+
+    definition = create_question_definition(
+        questionnaire=questionnaire,
+        question_type=QuestionType.MIXED,
+    )
+
+    value = AnswerValue(
+        field_type="text",
+        text_value=None,
+    )
+
+    answer = Answer(
+        submission=submission,
+        question_definition=definition,
+        values=[value],
+    )
+
+    assert answer.is_answered is False

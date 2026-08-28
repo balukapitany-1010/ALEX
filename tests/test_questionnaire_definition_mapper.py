@@ -278,3 +278,59 @@ def test_mapper_ignores_inactive_option_with_empty_label():
         definitions[0].options[0].option_id
         == "TEST_1"
     )
+
+def test_mapper_detail_inherits_previous_topic():
+    data = {
+        "spec_version": "2.0",
+        "locale": "HU",
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "ID": "048E497F",
+                        "name": "G1b",
+                        "title": "Főkérdés",
+                        "type": "checkbox",
+                        "category": "G",
+                        "topic": "Vállalkozási irányítási rendszerek",
+                        "organization": "SZTFH",
+                        "organization_size": ["Large"],
+                        "GeographicalRelevance": [
+                            "HU/EGT/Switzerland"
+                        ],
+                        "choices": [
+                            {
+                                "value": "048E497F_1",
+                                "text": "Teszt",
+                                "status": "active",
+                            }
+                        ],
+                    },
+                    {
+                        "ID": "048E497F_DETAIL1",
+                        "name": "G1b_detail1",
+                        "title": "Részletezés",
+                        "type": "text",
+                        "category": "G",
+                        "organization": "SZTFH",
+                        "organization_size": ["Large"],
+                        "GeographicalRelevance": [
+                            "HU/EGT/Switzerland"
+                        ],
+                    },
+                ]
+            }
+        ],
+    }
+
+    mapper = QuestionnaireDefinitionMapper()
+
+    _, definitions = mapper.map(
+        data,
+        questionnaire_code="SZTFH-ESG",
+    )
+
+    assert (
+        definitions[1].topic
+        == "Vállalkozási irányítási rendszerek"
+    )

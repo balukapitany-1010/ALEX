@@ -19,30 +19,58 @@ class QuestionnaireDefinitionMapper:
         tuple[QuestionDefinition, ...],
     ]:
         if not isinstance(data, dict):
-            raise TypeError("data must be a dictionary")
+            raise TypeError(
+                "data must be a dictionary"
+            )
 
-        if not isinstance(questionnaire_code,str,):
-            raise TypeError("questionnaire_code must be a string")
+        if not isinstance(questionnaire_code, str):
+            raise TypeError(
+                "questionnaire_code must be a string"
+            )
 
-        questionnaire_code = (questionnaire_code.strip())
+        questionnaire_code = questionnaire_code.strip()
 
         if not questionnaire_code:
-            raise ValueError("questionnaire_code cannot be empty")
+            raise ValueError(
+                "questionnaire_code cannot be empty"
+            )
 
-        spec_version = data.get("spec_version")
+        spec_version = data.get(
+            "spec_version"
+        )
 
-        locale = data.get("locale")
+        locale = data.get(
+            "locale"
+        )
 
-        pages = data.get("pages")
+        pages = data.get(
+            "pages"
+        )
 
-        if not isinstance(spec_version, str,):
-            raise ValueError("spec_version is required")
+        if not isinstance(spec_version, str):
+            raise ValueError(
+                "spec_version is required"
+            )
 
-        if not isinstance(locale,  str,):
-            raise ValueError("locale is required")
+        if not spec_version.strip():
+            raise ValueError(
+                "spec_version cannot be empty"
+            )
 
-        if not isinstance( pages, list,):
-            raise ValueError("pages must be a list")
+        if not isinstance(locale, str):
+            raise ValueError(
+                "locale is required"
+            )
+
+        if not locale.strip():
+            raise ValueError(
+                "locale cannot be empty"
+            )
+
+        if not isinstance(pages, list):
+            raise ValueError(
+                "pages must be a list"
+            )
 
         questionnaire = Questionnaire(
             questionnaire_code=questionnaire_code,
@@ -50,31 +78,52 @@ class QuestionnaireDefinitionMapper:
             locale=locale.strip(),
         )
 
-        definitions: list[
-            QuestionDefinition
-        ] = []
+        definitions: list[QuestionDefinition] = []
 
         for page in pages:
-            if not isinstance(page,dict,):
-                raise ValueError("page must be an object")
+            if not isinstance(page, dict):
+                raise ValueError(
+                    "page must be an object"
+                )
 
             elements = page.get(
                 "elements",
                 [],
             )
 
-            if not isinstance(elements,list,):
-                raise ValueError("page elements must be a list")
+            if not isinstance(elements, list):
+                raise ValueError(
+                    "page elements must be a list"
+                )
+
+            current_topic: str | None = None
 
             for element in elements:
+                if not isinstance(element, dict):
+                    raise ValueError(
+                        "question element must be an object"
+                    )
+
+                explicit_topic = self._optional_string(
+                    element.get("topic")
+                )
+
+                if explicit_topic is not None:
+                    current_topic = explicit_topic
+
                 definition = self._map_element(
                     element=element,
                     questionnaire=questionnaire,
+                    fallback_topic=current_topic,
                 )
 
-                definitions.append(definition)
+                definitions.append(
+                    definition
+                )
 
-        return (questionnaire,tuple(definitions),
+        return (
+            questionnaire,
+            tuple(definitions),
         )
 
     def _map_element(
@@ -82,12 +131,12 @@ class QuestionnaireDefinitionMapper:
         *,
         element: dict[str, Any],
         questionnaire: Questionnaire,
+        fallback_topic: str | None = None,
     ) -> QuestionDefinition:
-        if not isinstance(
-            element,
-            dict,
-        ):
-            raise ValueError("question element must be an object")
+        if not isinstance(element, dict):
+            raise ValueError(
+                "question element must be an object"
+            )
 
         question_id = self._required_string(
             element,
@@ -99,11 +148,12 @@ class QuestionnaireDefinitionMapper:
             "name",
         )
 
+
         title = (
-                self._optional_string(
-                    element.get("title")
-                )
-                or question_code
+            self._optional_string(
+                element.get("title")
+            )
+            or question_code
         )
 
         category = self._map_category(
@@ -113,12 +163,10 @@ class QuestionnaireDefinitionMapper:
             )
         )
 
-        question_type = (
-            self._map_question_type(
-                self._required_string(
-                    element,
-                    "type",
-                )
+        question_type = self._map_question_type(
+            self._required_string(
+                element,
+                "type",
             )
         )
 
@@ -126,11 +174,9 @@ class QuestionnaireDefinitionMapper:
             element
         )
 
-        organization = (
-            self._required_string(
-                element,
-                "organization",
-            )
+
+        organization = self._get_organization(
+            element
         )
 
         organization_sizes = element.get(
@@ -138,28 +184,33 @@ class QuestionnaireDefinitionMapper:
             [],
         )
 
-        geographical_relevance = (
-            element.get(
-                "GeographicalRelevance",
-                [],
-            )
+        geographical_relevance = element.get(
+            "GeographicalRelevance",
+            [],
         )
 
-        topic = self._required_string(
-            element,
-            "topic",
+
+        topic = self._optional_string(
+            element.get("topic")
         )
+
+        if topic is None:
+            if (
+                "_detail" not in question_code.lower()
+                or fallback_topic is None
+            ):
+                raise ValueError(
+                    "topic must be a string"
+                )
+
+            topic = fallback_topic
 
         subtopic = self._optional_string(
-            element.get(
-                "subtopic"
-            )
+            element.get("subtopic")
         )
 
         requirement = self._optional_string(
-            element.get(
-                "requirement"
-            )
+            element.get("requirement")
         )
 
         question = Question(
@@ -167,14 +218,9 @@ class QuestionnaireDefinitionMapper:
             question_code=question_code,
         )
 
-
-        option_question_types = {
-            QuestionType.RADIO,
-            QuestionType.CHECKBOX,
-            QuestionType.DROPDOWN,
-            QuestionType.MIXED,
-        }
-
+        #
+        # Klasszikus válaszopciók.
+        #
         if question_type in {
             QuestionType.RADIO,
             QuestionType.CHECKBOX,
@@ -184,10 +230,12 @@ class QuestionnaireDefinitionMapper:
                 element.get("choices")
             )
 
+
         elif question_type == QuestionType.MIXED:
             options = self._map_mixed_options(
                 element.get("choices")
             )
+
 
         else:
             options = []
@@ -200,9 +248,7 @@ class QuestionnaireDefinitionMapper:
             subject=subject,
             organization=organization,
             organization_sizes=organization_sizes,
-            geographical_relevance=(
-                geographical_relevance
-            ),
+            geographical_relevance=geographical_relevance,
             topic=topic,
             subtopic=subtopic,
             requirement=requirement,
@@ -211,8 +257,8 @@ class QuestionnaireDefinitionMapper:
         )
 
     def _map_mixed_options(
-            self,
-            choices: Any,
+        self,
+        choices: Any,
     ) -> list[Option]:
         if choices is None:
             return []
@@ -222,13 +268,16 @@ class QuestionnaireDefinitionMapper:
                 "choices must be a list"
             )
 
-        selectable_choices: list[dict[str, Any]] = []
+        selectable_choices: list[
+            dict[str, Any]
+        ] = []
 
         for choice in choices:
             if not isinstance(choice, dict):
                 raise ValueError(
                     "choice must be an object"
                 )
+
 
             if choice.get("inputType") is not None:
                 continue
@@ -242,8 +291,8 @@ class QuestionnaireDefinitionMapper:
         )
 
     def _map_options(
-            self,
-            choices: Any,
+        self,
+        choices: Any,
     ) -> list[Option]:
         if choices is None:
             return []
@@ -261,14 +310,15 @@ class QuestionnaireDefinitionMapper:
                     "choice must be an object"
                 )
 
-            status = choice.get("status")
+            status = choice.get(
+                "status"
+            )
 
-            # A kérdőív definícióban előfordulnak
-            # történeti/inaktív opciók üres felirattal.
-            # Ezek nem részei az aktív kérdésdefiníciónak.
+
             if (
-                    isinstance(status, str)
-                    and status.strip().lower() == "inactive"
+                isinstance(status, str)
+                and status.strip().lower()
+                == "inactive"
             ):
                 continue
 
@@ -283,14 +333,16 @@ class QuestionnaireDefinitionMapper:
 
             if not isinstance(label, str):
                 raise ValueError(
-                    f"option label must be a string: {option_id}"
+                    "option label must be a string: "
+                    f"{option_id}"
                 )
 
             label = label.strip()
 
             if not label:
                 raise ValueError(
-                    f"option label cannot be empty: {option_id}"
+                    "option label cannot be empty: "
+                    f"{option_id}"
                 )
 
             options.append(
@@ -301,6 +353,7 @@ class QuestionnaireDefinitionMapper:
             )
 
         return options
+
     @staticmethod
     def _map_category(
         value: str,
@@ -311,13 +364,18 @@ class QuestionnaireDefinitionMapper:
             ]
 
         except KeyError as error:
-            raise ValueError("unsupported question "f"category: {value}") from error
+            raise ValueError(
+                "unsupported question category: "
+                f"{value}"
+            ) from error
 
     @staticmethod
     def _map_question_type(
         value: str,
     ) -> QuestionType:
-        normalized = (value.strip().lower())
+        normalized = (
+            value.strip().lower()
+        )
 
         mapping = {
             "radiogroup": QuestionType.RADIO,
@@ -336,7 +394,10 @@ class QuestionnaireDefinitionMapper:
         )
 
         if question_type is None:
-            raise ValueError("unsupported JSON question "f"type: {value}")
+            raise ValueError(
+                "unsupported JSON question type: "
+                f"{value}"
+            )
 
         return question_type
 
@@ -349,16 +410,17 @@ class QuestionnaireDefinitionMapper:
             key
         )
 
-        if not isinstance(
-            value,
-            str,
-        ):
-            raise ValueError(f"{key} must be a string")
+        if not isinstance(value, str):
+            raise ValueError(
+                f"{key} must be a string"
+            )
 
         value = value.strip()
 
         if not value:
-            raise ValueError(f"{key} cannot be empty")
+            raise ValueError(
+                f"{key} cannot be empty"
+            )
 
         return value
 
@@ -369,11 +431,11 @@ class QuestionnaireDefinitionMapper:
         if value is None:
             return None
 
-        if not isinstance(
-            value,
-            str,
-        ):
-            raise ValueError("optional value must be ""a string or None")
+        if not isinstance(value, str):
+            raise ValueError(
+                "optional value must be "
+                "a string or None"
+            )
 
         value = value.strip()
 
@@ -383,9 +445,13 @@ class QuestionnaireDefinitionMapper:
     def _get_subject(
         element: dict[str, Any],
     ) -> str:
-        subject = element.get("subject")
+        subject = element.get(
+            "subject"
+        )
 
-        if (isinstance(subject, str)and subject.strip()
+        if (
+            isinstance(subject, str)
+            and subject.strip()
         ):
             return subject.strip()
 
@@ -404,3 +470,19 @@ class QuestionnaireDefinitionMapper:
             return "Governance"
 
         return "ESG"
+
+    @staticmethod
+    def _get_organization(
+        element: dict[str, Any],
+    ) -> str:
+        organization = element.get(
+            "organization"
+        )
+
+        if (
+            isinstance(organization, str)
+            and organization.strip()
+        ):
+            return organization.strip()
+
+        return "SZTFH"

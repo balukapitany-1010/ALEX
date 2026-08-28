@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from uuid import uuid4
-
+from alex.esg.domain.answer_value import AnswerValue
 from alex.esg.domain.option import Option
 from alex.esg.domain.question_definition import QuestionDefinition
 from alex.esg.domain.question_type import QuestionType
@@ -15,40 +15,42 @@ class Answer:
         selected_options: list[Option] | None = None,
         text_value: str | None = None,
         number_value: int | float | None = None,
-    ):
+        values: list[AnswerValue] | None = None,
+    ) -> None:
+
+        if values is not None:
+            if not isinstance(values, list):
+                raise TypeError("values must be a list or None")
+
+            if not all(
+                isinstance(value, AnswerValue) for value in values
+            ):
+                raise TypeError("values must contain only AnswerValue objects")
+
         if not isinstance(submission, Submission):
             raise TypeError("submission must be a Submission")
 
         if not isinstance(question_definition, QuestionDefinition):
-            raise TypeError(
-                "question_definition must be a QuestionDefinition"
-            )
+            raise TypeError("question_definition must be a QuestionDefinition")
 
 
         if (
             submission.questionnaire.questionnaire_key
             != question_definition.questionnaire.questionnaire_key
         ):
-            raise ValueError(
-                "question_definition must belong to the same "
-                "questionnaire as the submission"
-            )
+            raise ValueError("question_definition must belong to the same ""questionnaire as the submission")
 
 
 
         if selected_options is not None:
             if not isinstance(selected_options, list):
-                raise TypeError(
-                    "selected_options must be a list or None"
-                )
+                raise TypeError( "selected_options must be a list or None")
 
             if not all(
                 isinstance(option, Option)
                 for option in selected_options
             ):
-                raise TypeError(
-                    "selected_options must contain only Option objects"
-                )
+                raise TypeError("selected_options must contain only Option objects")
 
             allowed_option_ids = {
                 option.option_id
@@ -61,10 +63,7 @@ class Answer:
             }
 
             if not selected_option_ids.issubset(allowed_option_ids):
-                raise ValueError(
-                    "selected_options must belong to the "
-                    "QuestionDefinition"
-                )
+                raise ValueError("selected_options must belong to the ""QuestionDefinition" )
 
             single_selection_types = {
                 QuestionType.RADIO,
@@ -76,10 +75,7 @@ class Answer:
                 in single_selection_types
                 and len(selected_options) > 1
             ):
-                raise ValueError(
-                    f"{question_definition.question_type.value} "
-                    "questions can have at most one option"
-                )
+                raise ValueError(f"{question_definition.question_type.value} ""questions can have at most one option")
 
             non_option_types = {
                 QuestionType.TEXT,
@@ -92,23 +88,16 @@ class Answer:
                 in non_option_types
                 and selected_options
             ):
-                raise ValueError(
-                    f"{question_definition.question_type.value} "
-                    "questions cannot have selected options"
-                )
+                raise ValueError(f"{question_definition.question_type.value} ""questions cannot have selected options")
 
 
 
         if text_value is not None:
             if not isinstance(text_value, str):
-                raise TypeError(
-                    "text_value must be a string or None"
-                )
+                raise TypeError("text_value must be a string or None")
 
             if not text_value.strip():
-                raise ValueError(
-                    "text_value cannot be empty"
-                )
+                raise ValueError("text_value cannot be empty")
 
             text_value_types = {
                 QuestionType.TEXT,
@@ -120,10 +109,7 @@ class Answer:
                 question_definition.question_type
                 not in text_value_types
             ):
-                raise ValueError(
-                    f"{question_definition.question_type.value} "
-                    "questions cannot have text_value"
-                )
+                raise ValueError(f"{question_definition.question_type.value} ""questions cannot have text_value")
 
 
 
@@ -132,9 +118,7 @@ class Answer:
                 number_value,
                 (int, float),
             ):
-                raise TypeError(
-                    "number_value must be an int, float or None"
-                )
+                raise TypeError( "number_value must be an int, float or None")
 
         number_value_types = {
             QuestionType.NUMBER,
@@ -146,9 +130,7 @@ class Answer:
             and question_definition.question_type
             not in number_value_types
         ):
-            raise ValueError(
-                f"{question_definition.question_type.value} "
-                "questions cannot have number_value"
+            raise ValueError(f"{question_definition.question_type.value} ""questions cannot have number_value"
             )
 
 
@@ -166,7 +148,11 @@ class Answer:
 
         self._text_value = text_value
         self._number_value = number_value
-
+        self._values = (
+            list(values)
+            if values is not None
+            else []
+        )
         now = datetime.now(timezone.utc)
 
         self._created_at = now
@@ -200,13 +186,21 @@ class Answer:
     @property
     def updated_at(self) -> datetime:
         return self._updated_at
-
-
-
+    @property
+    def values(self) -> tuple[AnswerValue, ...]:
+        return tuple(self._values)
 
     @property
     def is_answered(self) -> bool:
-        question_type = self.question_definition.question_type
+        question_type = (
+            self.question_definition.question_type
+        )
+
+        if any(
+                value.is_answered
+                for value in self._values
+        ):
+            return True
 
         if question_type in {
             QuestionType.RADIO,
@@ -226,9 +220,9 @@ class Answer:
 
         if question_type == QuestionType.MIXED:
             return (
-                bool(self._selected_options)
-                or self._text_value is not None
-                or self._number_value is not None
+                    bool(self._selected_options)
+                    or self._text_value is not None
+                    or self._number_value is not None
             )
 
         return False
@@ -250,14 +244,10 @@ class Answer:
     ) -> None:
         if text_value is not None:
             if not isinstance(text_value, str):
-                raise TypeError(
-                    "text_value must be a string or None"
-                )
+                raise TypeError( "text_value must be a string or None")
 
             if not text_value.strip():
-                raise ValueError(
-                    "text_value cannot be empty"
-                )
+                raise ValueError("text_value cannot be empty")
 
         text_value_types = {
             QuestionType.TEXT,
@@ -270,10 +260,7 @@ class Answer:
             and self.question_definition.question_type
             not in text_value_types
         ):
-            raise ValueError(
-                f"{self.question_definition.question_type.value} "
-                "questions cannot have text_value"
-            )
+            raise ValueError(f"{self.question_definition.question_type.value} " "questions cannot have text_value")
 
         if self._text_value == text_value:
             return
@@ -281,7 +268,20 @@ class Answer:
         self._text_value = text_value
         self._updated_at = datetime.now(timezone.utc)
 
+    def add_value(
+            self,
+            value: AnswerValue,
+    ) -> None:
+        if not isinstance(value, AnswerValue):
+            raise TypeError(
+                "value must be an AnswerValue"
+            )
 
+        self._values.append(value)
+
+        self._updated_at = datetime.now(
+            timezone.utc
+        )
 
     def set_number_value(
         self,
@@ -292,9 +292,7 @@ class Answer:
                 number_value,
                 (int, float),
             ):
-                raise TypeError(
-                    "number_value must be an int, float or None"
-                )
+                raise TypeError("number_value must be an int, float or None")
 
         number_value_types = {
             QuestionType.NUMBER,
@@ -306,10 +304,7 @@ class Answer:
             and self.question_definition.question_type
             not in number_value_types
         ):
-            raise ValueError(
-                f"{self.question_definition.question_type.value} "
-                "questions cannot have number_value"
-            )
+            raise ValueError(f"{self.question_definition.question_type.value} ""questions cannot have number_value")
 
         if self._number_value == number_value:
             return
@@ -324,9 +319,7 @@ class Answer:
         option: Option,
     ) -> None:
         if not isinstance(option, Option):
-            raise TypeError(
-                "option must be an Option"
-            )
+            raise TypeError("option must be an Option")
 
         option_types = {
             QuestionType.RADIO,
@@ -339,10 +332,7 @@ class Answer:
             self.question_definition.question_type
             not in option_types
         ):
-            raise ValueError(
-                f"{self.question_definition.question_type.value} "
-                "questions cannot have selected options"
-            )
+            raise ValueError(f"{self.question_definition.question_type.value} ""questions cannot have selected options")
 
         allowed_option_ids = {
             allowed_option.option_id
@@ -351,9 +341,7 @@ class Answer:
         }
 
         if option.option_id not in allowed_option_ids:
-            raise ValueError(
-                "option must belong to the QuestionDefinition"
-            )
+            raise ValueError("option must belong to the QuestionDefinition")
 
         single_selection_types = {
             QuestionType.RADIO,
@@ -393,9 +381,7 @@ class Answer:
         option: Option,
     ) -> None:
         if not isinstance(option, Option):
-            raise TypeError(
-                "option must be an Option"
-            )
+            raise TypeError("option must be an Option")
 
         allowed_option_ids = {
             allowed_option.option_id
@@ -404,12 +390,21 @@ class Answer:
         }
 
         if option.option_id not in allowed_option_ids:
-            raise ValueError(
-                "option must belong to the QuestionDefinition"
-            )
+            raise ValueError("option must belong to the QuestionDefinition")
 
         for selected_option in self._selected_options:
             if selected_option.option_id == option.option_id:
                 self._selected_options.remove(selected_option)
                 self._updated_at = datetime.now(timezone.utc)
                 return
+
+    def remove_value(
+            self,
+            value: AnswerValue,
+    ) -> None:
+        if not isinstance(value, AnswerValue):
+            raise TypeError("value must be an AnswerValue")
+        if value not in self._values:
+            raise ValueError("value must belong to answer")
+        self._values.remove(value)
+        self._updated_at = datetime.now(timezone.utc)
