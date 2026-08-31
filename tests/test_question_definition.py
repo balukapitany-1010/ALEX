@@ -745,3 +745,122 @@ def test_text_question_does_not_require_options():
     )
 
     assert definition.options == []
+
+def test_question_definition_derives_allowed_value_ids_from_options():
+    questionnaire = Questionnaire(
+        questionnaire_code="TEST",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    question = Question(
+        question_id="TEST_ID",
+        question_code="E1",
+    )
+
+    option1 = Option(
+        option_id="TEST_ID_1",
+        label="Igen",
+    )
+
+    option2 = Option(
+        option_id="TEST_ID_2",
+        label="Nem",
+    )
+
+    definition = QuestionDefinition(
+        question=question,
+        questionnaire=questionnaire,
+        title="Teszt kérdés",
+        category=QuestionCategory.E,
+        subject="Environmental",
+        organization="SZTFH",
+        organization_sizes=["Large"],
+        geographical_relevance=["HU"],
+        topic="Teszt",
+        question_type=QuestionType.RADIO,
+        options=[
+            option1,
+            option2,
+        ],
+    )
+
+    assert (
+        definition.allowed_value_ids
+        == (
+            "TEST_ID_1",
+            "TEST_ID_2",
+        )
+    )
+
+def test_question_definition_accepts_table_value_ids():
+    questionnaire = Questionnaire(
+        questionnaire_code="TEST",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    question = Question(
+        question_id="TABLE_ID",
+        question_code="E17a",
+    )
+
+    definition = QuestionDefinition(
+        question=question,
+        questionnaire=questionnaire,
+        title="Teszt táblázat",
+        category=QuestionCategory.E,
+        subject="Environmental",
+        organization="SZTFH",
+        organization_sizes=["Large"],
+        geographical_relevance=["HU"],
+        topic="Teszt",
+        question_type=QuestionType.TABLE,
+        allowed_value_ids=[
+            "TABLE_ID_1",
+            "TABLE_ID_2",
+            "TABLE_ID_3",
+        ],
+    )
+
+    assert (
+        definition.allowed_value_ids
+        == (
+            "TABLE_ID_1",
+            "TABLE_ID_2",
+            "TABLE_ID_3",
+        )
+    )
+
+def test_question_definition_rejects_duplicate_allowed_value_ids():
+    questionnaire = Questionnaire(
+        questionnaire_code="TEST",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    question = Question(
+        question_id="TABLE_ID",
+        question_code="E17a",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="duplicate allowed value id",
+    ):
+        QuestionDefinition(
+            question=question,
+            questionnaire=questionnaire,
+            title="Teszt",
+            category=QuestionCategory.E,
+            subject="Environmental",
+            organization="SZTFH",
+            organization_sizes=["Large"],
+            geographical_relevance=["HU"],
+            topic="Teszt",
+            question_type=QuestionType.TABLE,
+            allowed_value_ids=[
+                "TABLE_ID_1",
+                "TABLE_ID_1",
+            ],
+        )

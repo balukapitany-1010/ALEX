@@ -19,58 +19,36 @@ class QuestionnaireDefinitionMapper:
         tuple[QuestionDefinition, ...],
     ]:
         if not isinstance(data, dict):
-            raise TypeError(
-                "data must be a dictionary"
-            )
+            raise TypeError("data must be a dictionary")
 
         if not isinstance(questionnaire_code, str):
-            raise TypeError(
-                "questionnaire_code must be a string"
-            )
+            raise TypeError("questionnaire_code must be a string")
 
         questionnaire_code = questionnaire_code.strip()
 
         if not questionnaire_code:
-            raise ValueError(
-                "questionnaire_code cannot be empty"
-            )
+            raise ValueError("questionnaire_code cannot be empty")
 
-        spec_version = data.get(
-            "spec_version"
-        )
+        spec_version = data.get("spec_version")
 
-        locale = data.get(
-            "locale"
-        )
+        locale = data.get("locale")
 
-        pages = data.get(
-            "pages"
-        )
+        pages = data.get("pages")
 
         if not isinstance(spec_version, str):
-            raise ValueError(
-                "spec_version is required"
-            )
+            raise ValueError("spec_version is required")
 
         if not spec_version.strip():
-            raise ValueError(
-                "spec_version cannot be empty"
-            )
+            raise ValueError("spec_version cannot be empty")
 
         if not isinstance(locale, str):
-            raise ValueError(
-                "locale is required"
-            )
+            raise ValueError("locale is required")
 
         if not locale.strip():
-            raise ValueError(
-                "locale cannot be empty"
-            )
+            raise ValueError("locale cannot be empty")
 
         if not isinstance(pages, list):
-            raise ValueError(
-                "pages must be a list"
-            )
+            raise ValueError("pages must be a list")
 
         questionnaire = Questionnaire(
             questionnaire_code=questionnaire_code,
@@ -82,9 +60,7 @@ class QuestionnaireDefinitionMapper:
 
         for page in pages:
             if not isinstance(page, dict):
-                raise ValueError(
-                    "page must be an object"
-                )
+                raise ValueError("page must be an object")
 
             elements = page.get(
                 "elements",
@@ -92,17 +68,13 @@ class QuestionnaireDefinitionMapper:
             )
 
             if not isinstance(elements, list):
-                raise ValueError(
-                    "page elements must be a list"
-                )
+                raise ValueError("page elements must be a list")
 
             current_topic: str | None = None
 
             for element in elements:
                 if not isinstance(element, dict):
-                    raise ValueError(
-                        "question element must be an object"
-                    )
+                    raise ValueError("question element must be an object")
 
                 explicit_topic = self._optional_string(
                     element.get("topic")
@@ -134,9 +106,7 @@ class QuestionnaireDefinitionMapper:
         fallback_topic: str | None = None,
     ) -> QuestionDefinition:
         if not isinstance(element, dict):
-            raise ValueError(
-                "question element must be an object"
-            )
+            raise ValueError("question element must be an object")
 
         question_id = self._required_string(
             element,
@@ -199,9 +169,7 @@ class QuestionnaireDefinitionMapper:
                 "_detail" not in question_code.lower()
                 or fallback_topic is None
             ):
-                raise ValueError(
-                    "topic must be a string"
-                )
+                raise ValueError("topic must be a string")
 
             topic = fallback_topic
 
@@ -218,9 +186,7 @@ class QuestionnaireDefinitionMapper:
             question_code=question_code,
         )
 
-        #
-        # Klasszikus válaszopciók.
-        #
+
         if question_type in {
             QuestionType.RADIO,
             QuestionType.CHECKBOX,
@@ -254,6 +220,11 @@ class QuestionnaireDefinitionMapper:
             requirement=requirement,
             question_type=question_type,
             options=options,
+            allowed_value_ids=(
+                self._map_allowed_value_ids(
+                    element
+                )
+            ),
         )
 
     def _map_mixed_options(
@@ -264,9 +235,7 @@ class QuestionnaireDefinitionMapper:
             return []
 
         if not isinstance(choices, list):
-            raise ValueError(
-                "choices must be a list"
-            )
+            raise ValueError("choices must be a list")
 
         selectable_choices: list[
             dict[str, Any]
@@ -274,9 +243,7 @@ class QuestionnaireDefinitionMapper:
 
         for choice in choices:
             if not isinstance(choice, dict):
-                raise ValueError(
-                    "choice must be an object"
-                )
+                raise ValueError("choice must be an object")
 
 
             if choice.get("inputType") is not None:
@@ -290,6 +257,142 @@ class QuestionnaireDefinitionMapper:
             selectable_choices
         )
 
+    @staticmethod
+    def _map_allowed_value_ids(
+            element: dict[str, Any],
+    ) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+
+        def add_value_id(
+                value: Any,
+        ) -> None:
+            if value is None:
+                return
+
+            if not isinstance(value, str):
+                raise ValueError(
+                    "allowed value id "
+                    "must be a string"
+                )
+
+            normalized = value.strip()
+
+            if not normalized:
+                raise ValueError(
+                    "allowed value id "
+                    "cannot be empty"
+                )
+
+            if normalized in seen:
+                raise ValueError(
+                    "duplicate allowed "
+                    "value id: "
+                    f"{normalized}"
+                )
+
+            seen.add(normalized)
+            result.append(normalized)
+
+        #
+        # CHOICES
+        #
+        choices = element.get(
+            "choices",
+            [],
+        )
+
+        if choices is not None:
+            if not isinstance(choices, list):
+                raise ValueError(
+                    "question choices "
+                    "must be a list"
+                )
+
+            for choice in choices:
+                if not isinstance(
+                        choice,
+                        dict,
+                ):
+                    raise ValueError(
+                        "question choice "
+                        "must be an object"
+                    )
+
+                add_value_id(
+                    choice.get("value")
+                )
+
+        #
+        # TABLE COLUMNS / CELLS
+        #
+        columns = element.get(
+            "columns",
+            [],
+        )
+
+        if columns is not None:
+            if not isinstance(columns, list):
+                raise ValueError(
+                    "table columns "
+                    "must be a list"
+                )
+
+            for column in columns:
+                if not isinstance(
+                        column,
+                        dict,
+                ):
+                    raise ValueError(
+                        "table column "
+                        "must be an object"
+                    )
+
+                cells = column.get(
+                    "cells",
+                    [],
+                )
+
+                if cells is None:
+                    continue
+
+                if not isinstance(cells, list):
+                    raise ValueError(
+                        "table cells "
+                        "must be a list"
+                    )
+
+                for cell in cells:
+                    if not isinstance(
+                            cell,
+                            dict,
+                    ):
+                        raise ValueError(
+                            "table cell "
+                            "must be an object"
+                        )
+
+                    add_value_id(
+                        cell.get("value")
+                    )
+
+
+        element_type = element.get(
+            "type"
+        )
+
+        if (
+                not result
+                and isinstance(element_type, str)
+                and element_type.strip().lower()
+                == "number"
+        ):
+            add_value_id(
+                element.get("ID")
+            )
+
+        return result
+
     def _map_options(
         self,
         choices: Any,
@@ -298,21 +401,15 @@ class QuestionnaireDefinitionMapper:
             return []
 
         if not isinstance(choices, list):
-            raise ValueError(
-                "choices must be a list"
-            )
+            raise ValueError("choices must be a list")
 
         options: list[Option] = []
 
         for choice in choices:
             if not isinstance(choice, dict):
-                raise ValueError(
-                    "choice must be an object"
-                )
+                raise ValueError("choice must be an object")
 
-            status = choice.get(
-                "status"
-            )
+            status = choice.get("status")
 
 
             if (
@@ -327,23 +424,15 @@ class QuestionnaireDefinitionMapper:
                 "value",
             )
 
-            label = choice.get(
-                "text"
-            )
+            label = choice.get("text")
 
             if not isinstance(label, str):
-                raise ValueError(
-                    "option label must be a string: "
-                    f"{option_id}"
-                )
+                raise ValueError("option label must be a string: "f"{option_id}")
 
             label = label.strip()
 
             if not label:
-                raise ValueError(
-                    "option label cannot be empty: "
-                    f"{option_id}"
-                )
+                raise ValueError("option label cannot be empty: "f"{option_id}")
 
             options.append(
                 Option(

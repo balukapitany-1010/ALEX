@@ -18,17 +18,24 @@ class SubmissionBatchItemResult:
     issues: tuple[ImportIssue, ...]
 
     @property
-    def errors(self) -> tuple[str, ...]:
+    def errors(self) -> tuple[ImportIssue, ...]:
         return tuple(
-            issue.message
+            issue
             for issue in self.issues
             if issue.severity == ImportIssueSeverity.ERROR
         )
 
     @property
-    def warnings(self) -> tuple[str, ...]:
+    def error_messages(self) -> tuple[str, ...]:
         return tuple(
             issue.message
+            for issue in self.errors
+        )
+
+    @property
+    def warnings(self) -> tuple[ImportIssue, ...]:
+        return tuple(
+            issue
             for issue in self.issues
             if issue.severity == ImportIssueSeverity.WARNING
         )
@@ -147,8 +154,17 @@ class SubmissionBatchImporter:
                 ),
             )
 
-        issues = self._validate_header(
+        header_issues = self._validate_header(
             header
+        )
+
+        question_issues = self._validate_questions(
+            submission_data
+        )
+
+        issues = (
+            *header_issues,
+            *question_issues,
         )
 
         return SubmissionBatchItemResult(
@@ -156,6 +172,252 @@ class SubmissionBatchImporter:
             header=header,
             issues=issues,
         )
+
+    @staticmethod
+    def _validate_questions(
+            submission_data: dict[str, Any],
+    ) -> tuple[ImportIssue, ...]:
+        issues: list[ImportIssue] = []
+
+        response = submission_data.get(
+            "response"
+        )
+
+        if not isinstance(response, dict):
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.ERROR,
+                    code="INVALID_RESPONSE_STRUCTURE",
+                    message=(
+                        "submission response "
+                        "must be an object"
+                    ),
+                )
+            )
+
+            return tuple(issues)
+
+        questions = response.get(
+            "questions"
+        )
+
+        if not isinstance(questions, list):
+            issues.append(
+                ImportIssue(
+                    severity=ImportIssueSeverity.ERROR,
+                    code="QUESTIONS_NOT_LIST",
+                    message=(
+                        "response questions "
+                        "must be a list"
+                    ),
+                )
+            )
+
+            return tuple(issues)
+
+        technical_ids: set[str] = set()
+        question_codes: set[str] = set()
+
+        for index, question in enumerate(
+                questions
+        ):
+            if not isinstance(question, dict):
+                issues.append(
+                    ImportIssue(
+                        severity=ImportIssueSeverity.ERROR,
+                        code="INVALID_QUESTION_STRUCTURE",
+                        message=(
+                            f"question {index} "
+                            "must be an object"
+                        ),
+                    )
+                )
+
+                continue
+
+            technical_id = question.get("id")
+
+            if (
+                    not isinstance(technical_id, str)
+                    or not technical_id.strip()
+            ):
+                issues.append(
+                    ImportIssue(
+                        severity=ImportIssueSeverity.ERROR,
+                        code="QUESTION_ID_MISSING",
+                        message=(
+                            f"question {index} "
+                            "technical id is missing"
+                        ),
+                    )
+                )
+
+                technical_id = None
+
+            else:
+                technical_id = (
+                    technical_id.strip()
+                )
+
+                if technical_id in technical_ids:
+                    issues.append(
+                        ImportIssue(
+                            severity=(
+                                ImportIssueSeverity.ERROR
+                            ),
+                            code=(
+                                "DUPLICATE_QUESTION_ID"
+                            ),
+                            message=(
+                                "duplicate response "
+                                "question id: "
+                                f"{technical_id}"
+                            ),
+                        )
+                    )
+
+                else:
+                    technical_ids.add(
+                        technical_id
+                    )
+
+            question_code = question.get(
+                "question_id"
+            )
+
+            if (
+                    not isinstance(question_code, str)
+                    or not question_code.strip()
+            ):
+                issues.append(
+                    ImportIssue(
+                        severity=(
+                            ImportIssueSeverity.WARNING
+                        ),
+                        code="QUESTION_CODE_MISSING",
+                        message=(
+                            f"question {index} "
+                            "question_id is missing"
+                        ),
+                    )
+                )
+
+            else:
+                question_code = (
+                    question_code.strip()
+                )
+
+                if (
+                        question_code
+                        in question_codes
+                ):
+                    issues.append(
+                        ImportIssue(
+                            severity=(
+                                ImportIssueSeverity.WARNING
+                            ),
+                            code=(
+                                "DUPLICATE_QUESTION_CODE"
+                            ),
+                            message=(
+                                "duplicate response "
+                                "question code: "
+                                f"{question_code}"
+                            ),
+                        )
+                    )
+
+                else:
+                    question_codes.add(
+                        question_code
+                    )
+
+            fields = question.get(
+                "fields"
+            )
+
+            if not isinstance(fields, list):
+                issues.append(
+                    ImportIssue(
+                        severity=ImportIssueSeverity.ERROR,
+                        code="QUESTION_FIELDS_INVALID",
+                        message=(
+                            "fields must be a list "
+                            f"for question "
+                            f"{technical_id or index}"
+                        ),
+                    )
+                )
+
+                continue
+
+            for field_index, field in enumerate(
+                    fields
+            ):
+                if not isinstance(field, dict):
+                    issues.append(
+                        ImportIssue(
+                            severity=(
+                                ImportIssueSeverity.ERROR
+                            ),
+                            code=(
+                                "INVALID_FIELD_STRUCTURE"
+                            ),
+                            message=(
+                                f"field {field_index} "
+                                f"of question "
+                                f"{technical_id or index} "
+                                "must be an object"
+                            ),
+                        )
+                    )
+
+                    continue
+
+                field_type = field.get(
+                    "type"
+                )
+
+                if (
+                        not isinstance(field_type, str)
+                        or not field_type.strip()
+                ):
+                    issues.append(
+                        ImportIssue(
+                            severity=(
+                                ImportIssueSeverity.ERROR
+                            ),
+                            code="FIELD_TYPE_MISSING",
+                            message=(
+                                "field type is missing "
+                                f"for question "
+                                f"{technical_id or index}"
+                            ),
+                        )
+                    )
+
+                values = field.get(
+                    "values"
+                )
+
+                if not isinstance(values, list):
+                    issues.append(
+                        ImportIssue(
+                            severity=(
+                                ImportIssueSeverity.ERROR
+                            ),
+                            code=(
+                                "FIELD_VALUES_INVALID"
+                            ),
+                            message=(
+                                "field values must be "
+                                "a list for question "
+                                f"{technical_id or index}"
+                            ),
+                        )
+                    )
+
+        return tuple(issues)
 
     @staticmethod
     def _validate_header(

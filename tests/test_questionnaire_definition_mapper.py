@@ -5,6 +5,7 @@ from alex.esg.domain.question_type import QuestionType
 from alex.esg.mappers.questionnaire_definition_mapper import (
     QuestionnaireDefinitionMapper,
 )
+from alex.esg.services.json_import_service import JsonImportService
 
 
 def test_mapper_maps_questionnaire_definition():
@@ -333,4 +334,240 @@ def test_mapper_detail_inherits_previous_topic():
     assert (
         definitions[1].topic
         == "Vállalkozási irányítási rendszerek"
+    )
+
+def test_mapper_maps_table_allowed_value_ids():
+    data = {
+        "spec_version": "2.0",
+        "locale": "HU",
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "name": "E17a",
+                        "title": (
+                            "Célkitűzések táblázata"
+                        ),
+                        "type": "table",
+                        "category": "E",
+                        "ID": "04E40FB9",
+                        "topic": "Éghajlatváltozás",
+                        "organization_size": [
+                            "Large"
+                        ],
+                        "GeographicalRelevance": [
+                            "HU"
+                        ],
+                        "organization": "SZTFH",
+                        "columns": [
+                            {
+                                "key": "column1",
+                                "cellType": "text",
+                                "cells": [
+                                    {
+                                        "value": (
+                                            "04E40FB9_1"
+                                        )
+                                    },
+                                    {
+                                        "value": (
+                                            "04E40FB9_2"
+                                        )
+                                    },
+                                ],
+                            },
+                            {
+                                "key": "column2",
+                                "cellType": "number",
+                                "cells": [
+                                    {
+                                        "value": (
+                                            "04E40FB9_3"
+                                        )
+                                    }
+                                ],
+                            },
+                        ],
+                    }
+                ]
+            }
+        ],
+    }
+
+    mapper = QuestionnaireDefinitionMapper()
+
+    _, definitions = mapper.map(
+        data,
+        questionnaire_code="SZTFH-ESG",
+    )
+
+    definition = definitions[0]
+
+    assert (
+        definition.allowed_value_ids
+        == (
+            "04E40FB9_1",
+            "04E40FB9_2",
+            "04E40FB9_3",
+        )
+    )
+
+def test_mapper_maps_mixed_allowed_value_ids():
+    data = {
+        "spec_version": "2.0",
+        "locale": "HU",
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "name": "E6",
+                        "title": "Teszt",
+                        "type": "mixed",
+                        "category": "E",
+                        "ID": "0319A12E",
+                        "topic": "Éghajlatváltozás",
+                        "organization_size": [
+                            "Large"
+                        ],
+                        "GeographicalRelevance": [
+                            "HU"
+                        ],
+                        "organization": "SZTFH",
+                        "choices": [
+                            {
+                                "text": "Első",
+                                "value": "0319A12E_1",
+                                "inputType": "number",
+                            },
+                            {
+                                "text": "Második",
+                                "value": "0319A12E_2",
+                                "inputType": "number",
+                            },
+                            {
+                                "text": "Harmadik",
+                                "value": "0319A12E_3",
+                                "inputType": "number",
+                            },
+                            {
+                                "text": "Nem ismert",
+                                "value": "0319A12E_4",
+                                "inputType": "checkbox",
+                            },
+                        ],
+                    }
+                ]
+            }
+        ],
+    }
+
+    mapper = QuestionnaireDefinitionMapper()
+
+    _, definitions = mapper.map(
+        data,
+        questionnaire_code="SZTFH-ESG",
+    )
+
+    assert (
+        definitions[0].allowed_value_ids
+        == (
+            "0319A12E_1",
+            "0319A12E_2",
+            "0319A12E_3",
+            "0319A12E_4",
+        )
+    )
+def test_mapper_maps_real_e17a_table_value_ids():
+    file_path = (
+        Path(__file__).parent
+        / "data"
+        / "Sztfh_kerdoiv_2_0_HU.json"
+    )
+
+    import_service = JsonImportService()
+
+    data = import_service.load_file(
+        file_path
+    )
+
+    mapper = QuestionnaireDefinitionMapper()
+
+    _, definitions = mapper.map(
+        data,
+        questionnaire_code="SZTFH-ESG",
+    )
+
+    definition = next(
+        definition
+        for definition in definitions
+        if (
+            definition.question.question_code
+            == "E17a"
+        )
+    )
+
+    assert (
+        definition.question.question_id
+        == "04E40FB9"
+    )
+
+    assert (
+        "04E40FB9_1"
+        in definition.allowed_value_ids
+    )
+
+    assert (
+        "04E40FB9_30"
+        in definition.allowed_value_ids
+    )
+
+    assert (
+        len(
+            definition.allowed_value_ids
+        )
+        == 30
+    )
+
+def test_mapper_uses_question_id_for_standalone_number_value():
+    data = {
+        "spec_version": "2.0",
+        "locale": "HU",
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "name": "E43_detail",
+                        "title": "Céldátum",
+                        "type": "number",
+                        "category": "E",
+                        "ID": "043564F5_DETAIL",
+                        "topic": (
+                            "Hulladék, "
+                            "körforgásos gazdaság"
+                        ),
+                        "organization_size": [
+                            "Large"
+                        ],
+                        "GeographicalRelevance": [],
+                        "organization": "SZTFH",
+                    }
+                ]
+            }
+        ],
+    }
+
+    mapper = QuestionnaireDefinitionMapper()
+
+    _, definitions = mapper.map(
+        data,
+        questionnaire_code="SZTFH-ESG",
+    )
+
+    assert len(definitions) == 1
+
+    assert (
+        definitions[0].allowed_value_ids
+        == (
+            "043564F5_DETAIL",
+        )
     )

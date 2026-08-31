@@ -714,3 +714,69 @@ def test_submission_rejects_invalid_organization_size():
             period="2026-Q2",
             organization_size=123,
         )
+def test_submission_allows_unknown_submitter():
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    submission = Submission(
+        relation=relation,
+        submitter=None,
+        questionnaire=questionnaire,
+        period="2026-Q1",
+    )
+
+    assert submission.submitter is None
+def test_submission_rejects_invalid_submitter():
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="submitter must be a Company or None",
+    ):
+        Submission(
+            relation=relation,
+            submitter="invalid",
+            questionnaire=questionnaire,
+            period="2026-Q1",
+        )

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from alex.esg.domain.attachment import Attachment
 
 class Submission:
-    def __init__(self, relation: SupplyChainRelation, submitter: Company, questionnaire: Questionnaire, period: str,submitted_at: datetime | None = None, status: SubmissionStatus = SubmissionStatus.SUBMITTED, organization_size:str | None = None):
+    def __init__(self, relation: SupplyChainRelation, submitter: Company | None, questionnaire: Questionnaire, period: str,submitted_at: datetime | None = None, status: SubmissionStatus = SubmissionStatus.SUBMITTED, organization_size:str | None = None):
         if not isinstance(relation, SupplyChainRelation):
             raise TypeError("relation must be supplychain relation")
 
@@ -22,8 +22,13 @@ class Submission:
         if not period.strip():
             raise ValueError("period must not be empty")
 
-        if not isinstance(submitter, Company):
-            raise TypeError("submitter must be a Company")
+        if (
+                submitter is not None
+                and not isinstance(submitter, Company)
+        ):
+            raise TypeError(
+                "submitter must be a Company or None"
+            )
         if submitted_at is not None and not isinstance(submitted_at, datetime):
             raise TypeError("submitted_at must be a datetime object")
         if not isinstance(status, SubmissionStatus):
@@ -44,7 +49,7 @@ class Submission:
         self.relation = relation
         self.period = period
         self.submission_id = str(uuid4())
-        self.submitter = submitter
+        self._submitter = submitter
         self.submitted_at = submitted_at
         self.created_at = now
         self.updated_at = now
@@ -184,6 +189,10 @@ class Submission:
     @property
     def answered_answers(self) -> tuple["Answer", ...]:
         return tuple(answer for answer in self._answers if answer.is_answered)
+
+    @property
+    def submitter(self) -> Company | None:
+        return self._submitter
 
     @property
     def attachments(self) -> tuple["Attachment", ...]:
