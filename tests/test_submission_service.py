@@ -10,7 +10,7 @@ from alex.esg.domain.question import Question
 from alex.esg.domain.question_category import QuestionCategory
 from alex.esg.domain.question_definition import QuestionDefinition
 from alex.esg.domain.question_type import QuestionType
-
+from alex.esg.domain.submission import Submission
 
 def _create_test_objects():
     requester = Company(
@@ -166,17 +166,100 @@ def test_submission_can_receive_text_answer():
 
     assert len(submission.answers) == 1
     assert submission.answers[0] is answer
-
-    assert submission.get_answer(
-        "E1"
-    ) is answer
-
-    assert submission.has_answer(
-        "E1"
-    )
-
-    assert submission.is_question_answered(
-        "E1"
-    )
-
+    assert submission.get_answer("E1") is answer
+    assert submission.has_answer("E1")
+    assert submission.is_question_answered( "E1")
     assert submission.answered_count == 1
+
+def test_submission_service_can_add_existing_submission():
+    service = SubmissionService()
+
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    submission = Submission(
+        relation=relation,
+        submitter=None,
+        questionnaire=questionnaire,
+        period="2026-Q1",
+    )
+
+    result = service.add_submission(
+        submission
+    )
+
+    assert result is submission
+
+    assert (service.list_submissions() == (submission,))
+
+def test_submission_service_rejects_duplicate_submission():
+    service = SubmissionService()
+
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    submission = Submission(
+        relation=relation,
+        submitter=None,
+        questionnaire=questionnaire,
+        period="2026-Q1",
+    )
+
+    service.add_submission(submission)
+
+    with pytest.raises(
+        ValueError,
+        match="submission already exists",
+    ):
+        service.add_submission(submission)
+
+    assert len(service.list_submissions()) == 1
+
+def test_submission_service_rejects_invalid_submission():
+    service = SubmissionService()
+
+    with pytest.raises(
+        TypeError,
+        match="submission must be a Submission",
+    ):
+        service.add_submission("invalid")

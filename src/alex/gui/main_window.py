@@ -8,27 +8,102 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from alex.esg.services.company_service import CompanyService
-from alex.esg.services.supplier_service import SupplierService
+from alex.esg.mappers.questionnaire_definition_mapper import (
+    QuestionnaireDefinitionMapper,
+)
+from alex.esg.mappers.submission_header_mapper import (
+    SubmissionHeaderMapper,
+)
+
+from alex.esg.services.company_service import (
+    CompanyService,
+)
+from alex.esg.services.json_import_service import (
+    JsonImportService,
+)
+from alex.esg.services.questionnaire_service import (
+    QuestionnaireService,
+)
+from alex.esg.services.submission_batch_importer import (
+    SubmissionBatchImporter,
+)
+from alex.esg.services.submission_batch_json_importer import (
+    SubmissionBatchJsonImporter,
+)
+from alex.esg.services.submission_batch_registration_service import (
+    SubmissionBatchRegistrationService,
+)
+from alex.esg.services.submission_builder_service import (
+    SubmissionBuilderService,
+)
+from alex.esg.services.submission_definition_validator import (
+    SubmissionDefinitionValidator,
+)
+from alex.esg.services.submission_file_import_service import (
+    SubmissionFileImportService,
+)
+from alex.esg.services.submission_import_preview_service import (
+    SubmissionImportPreviewService,
+)
+from alex.esg.services.submission_import_service import (
+    SubmissionImportService,
+)
+from alex.esg.services.submission_json_importer import (
+    SubmissionJsonImporter,
+)
+from alex.esg.services.submission_party_resolver import (
+    SubmissionPartyResolver,
+)
+from alex.esg.services.submission_relation_resolver import (
+    SubmissionRelationResolver,
+)
+from alex.esg.services.submission_service import (
+    SubmissionService,
+)
+from alex.esg.services.submission_submitter_resolver import (
+    SubmissionSubmitterResolver,
+)
+from alex.esg.services.supplier_service import (
+    SupplierService,
+)
 from alex.esg.services.supply_chain_relation_service import (
     SupplyChainRelationService,
 )
-from alex.gui.views.companies_views import CompaniesView
-from alex.gui.views.suppliers_view import SuppliersView
-from alex.esg.services.submission_service import SubmissionService
-from alex.gui.views.submissions_view import SubmissionsView
-from alex.esg.services.questionnaire_service import QuestionnaireService
+
+from alex.gui.views.companies_views import (
+    CompaniesView,
+)
+from alex.gui.views.submissions_view import (
+    SubmissionsView,
+)
+from alex.gui.views.suppliers_view import (
+    SuppliersView,
+)
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
 
+        # Alap service-ek
         self._company_service = CompanyService()
         self._supplier_service = SupplierService()
-        self._relation_service = SupplyChainRelationService()
-        self._submission_service = SubmissionService()
-        self._questionnaire_service = QuestionnaireService()
+        self._relation_service = (
+            SupplyChainRelationService()
+        )
+        self._submission_service = (
+            SubmissionService()
+        )
+        self._questionnaire_service = (
+            QuestionnaireService()
+        )
+
+        # Importhoz szükséges összetett service-ek.
+        #
+        # Fontos, hogy ez a _setup_content()
+        # ELŐTT fusson le, mert a SubmissionsView
+        # már használja ezeket.
+        self._setup_import_services()
 
         self.setWindowTitle("ALEX")
         self.resize(1200, 750)
@@ -41,7 +116,141 @@ class MainWindow(QMainWindow):
         self._setup_layout()
         self._connect_signals()
 
-    def _setup_navigation(self) -> None:
+    def _setup_import_services(
+        self,
+    ) -> None:
+        json_service = JsonImportService()
+
+        definition_mapper = (
+            QuestionnaireDefinitionMapper()
+        )
+
+        batch_inspector = (
+            SubmissionBatchImporter()
+        )
+
+        definition_validator = (
+            SubmissionDefinitionValidator()
+        )
+
+        party_resolver = (
+            SubmissionPartyResolver(
+                company_service=(
+                    self._company_service
+                ),
+                supplier_service=(
+                    self._supplier_service
+                ),
+            )
+        )
+
+        relation_resolver = (
+            SubmissionRelationResolver(
+                relation_service=(
+                    self._relation_service
+                ),
+            )
+        )
+
+        submitter_resolver = (
+            SubmissionSubmitterResolver(
+                company_service=(
+                    self._company_service
+                ),
+            )
+        )
+
+        submission_builder = (
+            SubmissionBuilderService(
+                party_resolver=(
+                    party_resolver
+                ),
+                relation_resolver=(
+                    relation_resolver
+                ),
+                submitter_resolver=(
+                    submitter_resolver
+                ),
+            )
+        )
+
+        submission_import_service = (
+            SubmissionImportService()
+        )
+
+        single_submission_importer = (
+            SubmissionJsonImporter(
+                header_mapper=(
+                    SubmissionHeaderMapper()
+                ),
+                builder=(
+                    submission_builder
+                ),
+                submission_import_service=(
+                    submission_import_service
+                ),
+            )
+        )
+
+        batch_json_importer = (
+            SubmissionBatchJsonImporter(
+                batch_inspector=(
+                    batch_inspector
+                ),
+                definition_validator=(
+                    definition_validator
+                ),
+                submission_importer=(
+                    single_submission_importer
+                ),
+            )
+        )
+
+        registration_service = (
+            SubmissionBatchRegistrationService(
+                submission_service=(
+                    self._submission_service
+                ),
+            )
+        )
+
+        self._submission_file_import_service = (
+            SubmissionFileImportService(
+                json_service=(
+                    json_service
+                ),
+                definition_mapper=(
+                    definition_mapper
+                ),
+                batch_importer=(
+                    batch_json_importer
+                ),
+                registration_service=(
+                    registration_service
+                ),
+            )
+        )
+
+        self._submission_import_preview_service = (
+            SubmissionImportPreviewService(
+                json_service=(
+                    json_service
+                ),
+                definition_mapper=(
+                    definition_mapper
+                ),
+                batch_inspector=(
+                    batch_inspector
+                ),
+                definition_validator=(
+                    definition_validator
+                ),
+            )
+        )
+
+    def _setup_navigation(
+        self,
+    ) -> None:
         self._navigation.addItems(
             [
                 "Cégek",
@@ -54,37 +263,81 @@ class MainWindow(QMainWindow):
             ]
         )
 
-        self._navigation.setFixedWidth(200)
-        self._navigation.setCurrentRow(0)
+        self._navigation.setFixedWidth(
+            200
+        )
 
-    def _setup_content(self) -> None:
+        self._navigation.setCurrentRow(
+            0
+        )
+
+    def _setup_content(
+        self,
+    ) -> None:
+        #
+        # Cégek
+        #
         self._content.addWidget(
             CompaniesView(
-                company_service=self._company_service,
+                company_service=(
+                    self._company_service
+                ),
             )
         )
+
+        #
+        # Egyelőre biztosítunk egy alapértelmezett
+        # 2.1-es kérdőívet a GUI számára.
+        #
         self._questionnaire_service.create_questionnaire(
             questionnaire_code="SZTFH-ESG",
             spec_version="2.1",
             locale="hu",
         )
 
+        #
+        # Beszállítók
+        #
         self._content.addWidget(
             SuppliersView(
-                supplier_service=self._supplier_service,
-                company_service=self._company_service,
-                relation_service=self._relation_service,
+                supplier_service=(
+                    self._supplier_service
+                ),
+                company_service=(
+                    self._company_service
+                ),
+                relation_service=(
+                    self._relation_service
+                ),
             )
         )
 
+        #
+        # Beküldések
+        #
         self._content.addWidget(
             SubmissionsView(
-                submission_service=self._submission_service,
-                relation_service=self._relation_service,
-                questionnaire_service=self._questionnaire_service,
+                submission_service=(
+                    self._submission_service
+                ),
+                relation_service=(
+                    self._relation_service
+                ),
+                questionnaire_service=(
+                    self._questionnaire_service
+                ),
+                file_import_service=(
+                    self._submission_file_import_service
+                ),
+                preview_service=(
+                    self._submission_import_preview_service
+                ),
             )
         )
 
+        #
+        # Egyelőre placeholder oldalak
+        #
         self._content.addWidget(
             self._create_placeholder_page(
                 "Kérdőívek"
@@ -109,7 +362,9 @@ class MainWindow(QMainWindow):
             )
         )
 
-    def _setup_layout(self) -> None:
+    def _setup_layout(
+        self,
+    ) -> None:
         central_widget = QWidget()
 
         layout = QHBoxLayout(
@@ -129,7 +384,9 @@ class MainWindow(QMainWindow):
             central_widget
         )
 
-    def _connect_signals(self) -> None:
+    def _connect_signals(
+        self,
+    ) -> None:
         self._navigation.currentRowChanged.connect(
             self._content.setCurrentIndex
         )
@@ -149,8 +406,12 @@ class MainWindow(QMainWindow):
         )
 
         font = title_label.font()
-        font.setPointSize(20)
-        font.setBold(True)
+        font.setPointSize(
+            20
+        )
+        font.setBold(
+            True
+        )
 
         title_label.setFont(
             font

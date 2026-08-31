@@ -6,6 +6,7 @@ from alex.esg.domain.submission import Submission
 from alex.esg.domain.supply_chain_relation import SupplyChainRelation
 
 
+
 class SubmissionService:
     def __init__(self) -> None:
         self._submissions: list[Submission] = []
@@ -46,3 +47,23 @@ class SubmissionService:
             if str(submission.submission_id) == normalized_id:
                 return submission
         return None
+
+    def add_submission(
+            self,
+            submission: Submission,
+    ) -> Submission:
+        if not isinstance(
+                submission,
+                Submission,
+        ):
+            raise TypeError("submission must be a Submission")
+
+        for existing in self._submissions:
+            if (
+                    existing.submission_id == submission.submission_id
+            ):
+                raise ValueError("submission already exists")
+
+        self._submissions.append(submission)
+
+        return submission
