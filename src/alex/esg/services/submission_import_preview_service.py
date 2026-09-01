@@ -1,27 +1,18 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from alex.esg.services.questionnaire_service import QuestionnaireService
 
-from alex.esg.domain.question_definition import (
-    QuestionDefinition,
-)
+from alex.esg.domain.question_definition import  QuestionDefinition
 from alex.esg.domain.questionnaire import Questionnaire
-from alex.esg.mappers.questionnaire_definition_mapper import (
-    QuestionnaireDefinitionMapper,
-)
+from alex.esg.mappers.questionnaire_definition_mapper import QuestionnaireDefinitionMapper
 from alex.esg.services.import_issue import (
     ImportIssue,
     ImportIssueSeverity,
 )
-from alex.esg.services.json_import_service import (
-    JsonImportService,
-)
-from alex.esg.services.submission_batch_importer import (
-    SubmissionBatchImporter,
-)
-from alex.esg.services.submission_definition_validator import (
-    SubmissionDefinitionValidator,
-)
+from alex.esg.services.json_import_service import JsonImportService
+from alex.esg.services.submission_batch_importer import SubmissionBatchImporter
+from alex.esg.services.submission_definition_validator import SubmissionDefinitionValidator
 
 
 @dataclass(frozen=True)
@@ -95,7 +86,20 @@ class SubmissionImportPreviewService:
         definition_mapper: QuestionnaireDefinitionMapper,
         batch_inspector: SubmissionBatchImporter,
         definition_validator: SubmissionDefinitionValidator,
+        questionnaire_service: QuestionnaireService,
     ) -> None:
+
+        if not isinstance(
+                questionnaire_service,
+                QuestionnaireService,
+        ):
+            raise TypeError(
+                "questionnaire_service must be a "
+                "QuestionnaireService"
+            )
+
+        self._questionnaire_service = questionnaire_service
+
         if not isinstance(
             json_service,
             JsonImportService,
@@ -174,12 +178,43 @@ class SubmissionImportPreviewService:
             )
         )
 
+        spec_version = definition_data.get(
+            "spec_version"
+        )
+
+        locale = definition_data.get(
+            "locale"
+        )
+
+        if not isinstance(
+                spec_version,
+                str,
+        ):
+            raise ValueError(
+                "definition spec_version must be a string"
+            )
+
+        if not isinstance(
+                locale,
+                str,
+        ):
+            raise ValueError(
+                "definition locale must be a string"
+            )
+
+        questionnaire = (
+            self._questionnaire_service.get_or_create(
+                questionnaire_code=questionnaire_code,
+                spec_version=spec_version,
+                locale=locale,
+            )
+        )
+
         questionnaire, definitions = (
             self._definition_mapper.map(
                 definition_data,
-                questionnaire_code=(
-                    questionnaire_code
-                ),
+                questionnaire_code=questionnaire_code,
+                questionnaire=questionnaire,
             )
         )
 

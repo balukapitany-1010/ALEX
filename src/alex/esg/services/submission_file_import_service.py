@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-
+from alex.esg.services.questionnaire_service import QuestionnaireService
 from alex.esg.domain.question_definition import QuestionDefinition
 from alex.esg.domain.questionnaire import Questionnaire
 from alex.esg.domain.submission import Submission
@@ -11,6 +11,7 @@ from alex.esg.services.submission_batch_json_importer import (
     SubmissionBatchJsonImporter,
 )
 from alex.esg.services.submission_batch_registration_service import SubmissionBatchRegistrationService
+from alex.esg.services.question_definition_service import QuestionDefinitionService
 
 
 @dataclass(frozen=True)
@@ -51,10 +52,34 @@ class SubmissionFileImportService:
         json_service: JsonImportService,
         definition_mapper: QuestionnaireDefinitionMapper,
         batch_importer: SubmissionBatchJsonImporter,
-        registration_service: (
-            SubmissionBatchRegistrationService
+        questionnaire_service: QuestionnaireService,
+        question_definition_service: QuestionDefinitionService,
+        registration_service: ( SubmissionBatchRegistrationService
         ),
     ) -> None:
+
+        if not isinstance(
+                question_definition_service,
+                QuestionDefinitionService,
+        ):
+            raise TypeError(
+                "question_definition_service must be a "
+                "QuestionDefinitionService"
+            )
+
+        self._question_definition_service = (question_definition_service)
+
+        if not isinstance(
+                questionnaire_service,
+                QuestionnaireService,
+        ):
+            raise TypeError(
+                "questionnaire_service must be a "
+                "QuestionnaireService"
+            )
+
+        self._questionnaire_service = questionnaire_service
+
         if not isinstance(
             json_service,
             JsonImportService,
@@ -97,35 +122,111 @@ class SubmissionFileImportService:
         self._registration_service = (registration_service)
 
     def import_files(
-        self,
-        *,
-        definition_file: str | Path,
-        submission_file: str | Path,
-        questionnaire_code: str,
+            self,
+            *,
+            definition_file: str | Path,
+            submission_file: str | Path,
+            questionnaire_code: str,
     ) -> SubmissionFileImportResult:
         if not isinstance(
-            questionnaire_code,
-            str,
+                questionnaire_code,
+                str,
         ):
-            raise TypeError("questionnaire_code must be a string")
+            raise TypeError(
+                "questionnaire_code must be a string"
+            )
 
-        questionnaire_code = (questionnaire_code.strip())
+        questionnaire_code = (
+            questionnaire_code.strip()
+        )
 
         if not questionnaire_code:
-            raise ValueError("questionnaire_code cannot be empty")
+            raise ValueError(
+                "questionnaire_code cannot be empty"
+            )
 
-        definition_data = (self._json_service.load_file(definition_file))
+        definition_data = (
+            self._json_service.load_file(
+                definition_file
+            )
+        )
 
-        submission_data = (self._json_service.load_file(submission_file))
+        submission_data = (
+            self._json_service.load_file(
+                submission_file
+            )
+        )
+
+        spec_version = definition_data.get(
+            "spec_version"
+        )
+
+        locale = definition_data.get(
+            "locale"
+        )
+
+        if not isinstance(
+                spec_version,
+                str,
+        ):
+            raise ValueError(
+                "definition spec_version must be a string"
+            )
+
+        if not isinstance(
+                locale,
+                str,
+        ):
+            raise ValueError(
+                "definition locale must be a string"
+            )
+
+        questionnaire = (
+            self._questionnaire_service.get_or_create(
+                questionnaire_code=questionnaire_code,
+                spec_version=spec_version,
+                locale=locale,
+            )
+        )
 
         questionnaire, definitions = (
             self._definition_mapper.map(
                 definition_data,
-                questionnaire_code=(
-                    questionnaire_code
-                ),
+                questionnaire_code=questionnaire_code,
+                questionnaire=questionnaire,
             )
         )
+
+        submission_version = (
+            submission_data.get(
+                "spec_version"
+            )
+        )
+
+        if not isinstance(
+                submission_version,
+                str,
+        ):
+            raise ValueError(
+                "submission spec_version must be a string"
+            )
+
+
+        if (
+                questionnaire.spec_version
+                == submission_version
+        ):
+            definition_registration = (
+                self._question_definition_service
+                .register_definitions(
+                    definitions
+                )
+            )
+
+            definitions = (
+                definition_registration.definitions
+            )
+
 
         batch_result = (
             self._batch_importer.import_batch(
@@ -135,7 +236,12 @@ class SubmissionFileImportService:
             )
         )
 
-        registered = (self._registration_service.register_import_result( batch_result))
+        registered = (
+            self._registration_service
+            .register_import_result(
+                batch_result
+            )
+        )
 
         return SubmissionFileImportResult(
             questionnaire=questionnaire,

@@ -7,78 +7,32 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-from alex.esg.mappers.questionnaire_definition_mapper import (
-    QuestionnaireDefinitionMapper,
-)
-from alex.esg.mappers.submission_header_mapper import (
-    SubmissionHeaderMapper,
-)
-
-from alex.esg.services.company_service import (
-    CompanyService,
-)
-from alex.esg.services.json_import_service import (
-    JsonImportService,
-)
-from alex.esg.services.questionnaire_service import (
-    QuestionnaireService,
-)
-from alex.esg.services.submission_batch_importer import (
-    SubmissionBatchImporter,
-)
-from alex.esg.services.submission_batch_json_importer import (
-    SubmissionBatchJsonImporter,
-)
-from alex.esg.services.submission_batch_registration_service import (
-    SubmissionBatchRegistrationService,
-)
-from alex.esg.services.submission_builder_service import (
-    SubmissionBuilderService,
-)
-from alex.esg.services.submission_definition_validator import (
-    SubmissionDefinitionValidator,
-)
-from alex.esg.services.submission_file_import_service import (
-    SubmissionFileImportService,
-)
-from alex.esg.services.submission_import_preview_service import (
-    SubmissionImportPreviewService,
-)
-from alex.esg.services.submission_import_service import (
-    SubmissionImportService,
-)
-from alex.esg.services.submission_json_importer import (
-    SubmissionJsonImporter,
-)
-from alex.esg.services.submission_party_resolver import (
-    SubmissionPartyResolver,
-)
-from alex.esg.services.submission_relation_resolver import (
-    SubmissionRelationResolver,
-)
-from alex.esg.services.submission_service import (
-    SubmissionService,
-)
-from alex.esg.services.submission_submitter_resolver import (
-    SubmissionSubmitterResolver,
-)
-from alex.esg.services.supplier_service import (
-    SupplierService,
-)
-from alex.esg.services.supply_chain_relation_service import (
-    SupplyChainRelationService,
-)
-
-from alex.gui.views.companies_views import (
-    CompaniesView,
-)
-from alex.gui.views.submissions_view import (
-    SubmissionsView,
-)
-from alex.gui.views.suppliers_view import (
-    SuppliersView,
-)
+from alex.esg.services.questionnaire_definition_file_import_service import QuestionnaireDefinitionFileImportService
+from alex.esg.mappers.questionnaire_definition_mapper import QuestionnaireDefinitionMapper
+from alex.esg.mappers.submission_header_mapper import SubmissionHeaderMapper
+from alex.esg.services.question_definition_service import  QuestionDefinitionService
+from alex.esg.services.company_service import CompanyService
+from alex.esg.services.json_import_service import  JsonImportService
+from alex.esg.services.questionnaire_service import QuestionnaireService
+from alex.esg.services.submission_batch_importer import  SubmissionBatchImporter
+from alex.esg.services.submission_batch_json_importer import  SubmissionBatchJsonImporter
+from alex.esg.services.submission_batch_registration_service import  SubmissionBatchRegistrationService
+from alex.esg.services.submission_builder_service import  SubmissionBuilderService
+from alex.esg.services.submission_definition_validator import SubmissionDefinitionValidator
+from alex.esg.services.submission_file_import_service import  SubmissionFileImportService
+from alex.esg.services.submission_import_preview_service import  SubmissionImportPreviewService
+from alex.esg.services.submission_import_service import  SubmissionImportService
+from alex.esg.services.submission_json_importer import  SubmissionJsonImporter
+from alex.esg.services.submission_party_resolver import  SubmissionPartyResolver
+from alex.esg.services.submission_relation_resolver import SubmissionRelationResolver
+from alex.esg.services.submission_service import SubmissionService
+from alex.esg.services.submission_submitter_resolver import SubmissionSubmitterResolver
+from alex.esg.services.supplier_service import SupplierService
+from alex.esg.services.supply_chain_relation_service import SupplyChainRelationService
+from alex.gui.views.questionnaires_view import QuestionnairesView
+from alex.gui.views.companies_views import CompaniesView
+from alex.gui.views.submissions_view import SubmissionsView
+from alex.gui.views.suppliers_view import SuppliersView
 
 
 class MainWindow(QMainWindow):
@@ -97,12 +51,10 @@ class MainWindow(QMainWindow):
         self._questionnaire_service = (
             QuestionnaireService()
         )
+        self._question_definition_service = (
+            QuestionDefinitionService()
+        )
 
-        # Importhoz szükséges összetett service-ek.
-        #
-        # Fontos, hogy ez a _setup_content()
-        # ELŐTT fusson le, mert a SubmissionsView
-        # már használja ezeket.
         self._setup_import_services()
 
         self.setWindowTitle("ALEX")
@@ -121,17 +73,11 @@ class MainWindow(QMainWindow):
     ) -> None:
         json_service = JsonImportService()
 
-        definition_mapper = (
-            QuestionnaireDefinitionMapper()
-        )
+        definition_mapper = (QuestionnaireDefinitionMapper())
 
-        batch_inspector = (
-            SubmissionBatchImporter()
-        )
+        batch_inspector = (SubmissionBatchImporter())
 
-        definition_validator = (
-            SubmissionDefinitionValidator()
-        )
+        definition_validator = (SubmissionDefinitionValidator())
 
         party_resolver = (
             SubmissionPartyResolver(
@@ -197,53 +143,52 @@ class MainWindow(QMainWindow):
                 batch_inspector=(
                     batch_inspector
                 ),
-                definition_validator=(
-                    definition_validator
-                ),
-                submission_importer=(
-                    single_submission_importer
-                ),
+                definition_validator=(definition_validator),
+                submission_importer=(single_submission_importer),
             )
         )
 
         registration_service = (
             SubmissionBatchRegistrationService(
-                submission_service=(
-                    self._submission_service
-                ),
+                submission_service=(self._submission_service),
             )
         )
 
         self._submission_file_import_service = (
             SubmissionFileImportService(
-                json_service=(
-                    json_service
-                ),
-                definition_mapper=(
-                    definition_mapper
-                ),
-                batch_importer=(
-                    batch_json_importer
-                ),
-                registration_service=(
-                    registration_service
+                json_service=json_service,
+                definition_mapper=definition_mapper,
+                batch_importer=batch_json_importer,
+                registration_service=registration_service,
+                questionnaire_service=(self._questionnaire_service),
+                question_definition_service=(
+                    self._question_definition_service
                 ),
             )
         )
 
         self._submission_import_preview_service = (
             SubmissionImportPreviewService(
-                json_service=(
-                    json_service
-                ),
-                definition_mapper=(
-                    definition_mapper
-                ),
-                batch_inspector=(
-                    batch_inspector
-                ),
+                json_service=json_service,
+                definition_mapper=definition_mapper,
+                batch_inspector=batch_inspector,
                 definition_validator=(
                     definition_validator
+                ),
+                questionnaire_service=(
+                    self._questionnaire_service
+                ),
+            )
+        )
+        self._questionnaire_definition_file_import_service = (
+            QuestionnaireDefinitionFileImportService(
+                json_service=json_service,
+                definition_mapper=definition_mapper,
+                questionnaire_service=(
+                    self._questionnaire_service
+                ),
+                question_definition_service=(
+                    self._question_definition_service
                 ),
             )
         )
@@ -263,20 +208,14 @@ class MainWindow(QMainWindow):
             ]
         )
 
-        self._navigation.setFixedWidth(
-            200
-        )
+        self._navigation.setFixedWidth(200)
 
-        self._navigation.setCurrentRow(
-            0
-        )
+        self._navigation.setCurrentRow(0)
 
     def _setup_content(
         self,
     ) -> None:
-        #
-        # Cégek
-        #
+
         self._content.addWidget(
             CompaniesView(
                 company_service=(
@@ -285,111 +224,89 @@ class MainWindow(QMainWindow):
             )
         )
 
-        #
-        # Egyelőre biztosítunk egy alapértelmezett
-        # 2.1-es kérdőívet a GUI számára.
-        #
-        self._questionnaire_service.create_questionnaire(
+
+        self._questionnaire_service.get_or_create(
             questionnaire_code="SZTFH-ESG",
             spec_version="2.1",
             locale="hu",
         )
 
-        #
-        # Beszállítók
-        #
         self._content.addWidget(
             SuppliersView(
-                supplier_service=(
-                    self._supplier_service
-                ),
-                company_service=(
-                    self._company_service
-                ),
-                relation_service=(
-                    self._relation_service
-                ),
+                supplier_service=(self._supplier_service),
+                company_service=(self._company_service),
+                relation_service=(self._relation_service),
             )
         )
 
-        #
         # Beküldések
-        #
+
         self._content.addWidget(
             SubmissionsView(
-                submission_service=(
-                    self._submission_service
-                ),
-                relation_service=(
-                    self._relation_service
-                ),
+                submission_service=(self._submission_service),
+                relation_service=(self._relation_service),
+                questionnaire_service=(self._questionnaire_service),
+                file_import_service=(self._submission_file_import_service),
+                preview_service=(self._submission_import_preview_service),
+            )
+        )
+
+        self._questionnaires_view = (
+            QuestionnairesView(
                 questionnaire_service=(
                     self._questionnaire_service
                 ),
-                file_import_service=(
-                    self._submission_file_import_service
+                question_definition_service=(
+                    self._question_definition_service
                 ),
-                preview_service=(
-                    self._submission_import_preview_service
+                definition_file_import_service=(
+                    self._questionnaire_definition_file_import_service
                 ),
             )
         )
 
-        #
-        # Egyelőre placeholder oldalak
-        #
         self._content.addWidget(
-            self._create_placeholder_page(
-                "Kérdőívek"
-            )
+            self._questionnaires_view
         )
 
         self._content.addWidget(
-            self._create_placeholder_page(
-                "Dokumentumok"
-            )
+            self._questionnaires_view
         )
 
-        self._content.addWidget(
-            self._create_placeholder_page(
-                "Riportok"
-            )
-        )
+        self._content.addWidget(self._create_placeholder_page("Dokumentumok" ))
 
-        self._content.addWidget(
-            self._create_placeholder_page(
-                "Adatbázis"
-            )
-        )
+        self._content.addWidget(self._create_placeholder_page("Riportok"))
+
+        self._content.addWidget(self._create_placeholder_page("Adatbázis"))
 
     def _setup_layout(
         self,
     ) -> None:
         central_widget = QWidget()
 
-        layout = QHBoxLayout(
-            central_widget
-        )
+        layout = QHBoxLayout(central_widget)
 
-        layout.addWidget(
-            self._navigation
-        )
+        layout.addWidget(self._navigation)
 
-        layout.addWidget(
-            self._content,
-            1,
-        )
+        layout.addWidget(self._content, 1,)
 
-        self.setCentralWidget(
-            central_widget
-        )
+        self.setCentralWidget(central_widget)
 
-    def _connect_signals(
-        self,
-    ) -> None:
+    def _connect_signals(self) -> None:
         self._navigation.currentRowChanged.connect(
             self._content.setCurrentIndex
         )
+
+        self._navigation.currentRowChanged.connect(
+            self._refresh_current_page
+        )
+
+    def _refresh_current_page(
+            self,
+            index: int,
+    ) -> None:
+        if index == 3:
+            self._questionnaires_view.refresh()
 
     @staticmethod
     def _create_placeholder_page(
@@ -397,29 +314,17 @@ class MainWindow(QMainWindow):
     ) -> QWidget:
         page = QWidget()
 
-        layout = QVBoxLayout(
-            page
-        )
+        layout = QVBoxLayout(page)
 
-        title_label = QLabel(
-            title
-        )
+        title_label = QLabel(title)
 
         font = title_label.font()
-        font.setPointSize(
-            20
-        )
-        font.setBold(
-            True
-        )
+        font.setPointSize(20)
+        font.setBold(True )
 
-        title_label.setFont(
-            font
-        )
+        title_label.setFont(font)
 
-        layout.addWidget(
-            title_label
-        )
+        layout.addWidget(title_label)
 
         layout.addStretch()
 

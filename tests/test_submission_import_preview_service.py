@@ -1,20 +1,10 @@
 import json
-
-from alex.esg.mappers.questionnaire_definition_mapper import (
-    QuestionnaireDefinitionMapper,
-)
-from alex.esg.services.json_import_service import (
-    JsonImportService,
-)
-from alex.esg.services.submission_batch_importer import (
-    SubmissionBatchImporter,
-)
-from alex.esg.services.submission_definition_validator import (
-    SubmissionDefinitionValidator,
-)
-from alex.esg.services.submission_import_preview_service import (
-    SubmissionImportPreviewService,
-)
+from alex.esg.services.questionnaire_service import  QuestionnaireService
+from alex.esg.mappers.questionnaire_definition_mapper import QuestionnaireDefinitionMapper
+from alex.esg.services.json_import_service import JsonImportService
+from alex.esg.services.submission_batch_importer import SubmissionBatchImporter
+from alex.esg.services.submission_definition_validator import SubmissionDefinitionValidator
+from alex.esg.services.submission_import_preview_service import SubmissionImportPreviewService
 
 
 def _create_service():
@@ -29,8 +19,10 @@ def _create_service():
         definition_validator=(
             SubmissionDefinitionValidator()
         ),
+        questionnaire_service=(
+            QuestionnaireService()
+        ),
     )
-
 
 def _write_files(
     tmp_path,
@@ -153,16 +145,10 @@ def _write_files(
     )
 
 
-def test_preview_reports_importable_files(
-    tmp_path,
-):
+def test_preview_reports_importable_files(tmp_path):
     service = _create_service()
 
-    definition_file, submission_file = (
-        _write_files(
-            tmp_path
-        )
-    )
+    definition_file, submission_file = (_write_files(tmp_path))
 
     result = service.preview_files(
         definition_file=definition_file,
@@ -178,28 +164,18 @@ def test_preview_reports_importable_files(
     assert result.definition_count == 1
     assert result.submission_count == 1
 
-    assert (
-        result.response_question_count
-        == 1
-    )
+    assert (result.response_question_count== 1)
 
-    assert (
-        result.matched_question_count
-        == 1
-    )
+    assert (result.matched_question_count == 1)
 
     assert result.errors == ()
     assert result.can_import is True
 
 
-def test_preview_reports_version_mismatch_without_secondary_errors(
-    tmp_path,
-):
+def test_preview_reports_version_mismatch_without_secondary_errors(tmp_path):
     service = _create_service()
 
-    definition_file, submission_file = (
-        _write_files(
-            tmp_path,
+    definition_file, submission_file = (_write_files(tmp_path,
             definition_version="2.0",
             submission_version="2.1",
         )
@@ -215,23 +191,14 @@ def test_preview_reports_version_mismatch_without_secondary_errors(
 
     assert result.definition_count == 1
 
-    assert (
-        result.response_question_count
-        == 1
-    )
+    assert (result.response_question_count== 1)
 
-    assert (
-        result.matched_question_count
-        == 1
-    )
+    assert (result.matched_question_count== 1)
 
     assert result.can_import is False
 
     assert len(result.errors) == 1
 
-    assert (
-        result.errors[0].code
-        == "QUESTIONNAIRE_VERSION_MISMATCH"
-    )
+    assert (result.errors[0].code == "QUESTIONNAIRE_VERSION_MISMATCH")
 
     assert result.warnings == ()

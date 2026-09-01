@@ -10,10 +10,11 @@ from alex.esg.domain.questionnaire import Questionnaire
 
 class QuestionnaireDefinitionMapper:
     def map(
-        self,
-        data: dict[str, Any],
-        *,
-        questionnaire_code: str,
+            self,
+            data: dict,
+            *,
+            questionnaire_code: str,
+            questionnaire: Questionnaire | None = None,
     ) -> tuple[
         Questionnaire,
         tuple[QuestionDefinition, ...],
@@ -50,11 +51,19 @@ class QuestionnaireDefinitionMapper:
         if not isinstance(pages, list):
             raise ValueError("pages must be a list")
 
-        questionnaire = Questionnaire(
-            questionnaire_code=questionnaire_code,
-            spec_version=spec_version.strip(),
-            locale=locale.strip(),
-        )
+        if questionnaire is None:
+            questionnaire = Questionnaire(
+                questionnaire_code=questionnaire_code,
+                spec_version=spec_version,
+                locale=locale,
+            )
+        else:
+            self._validate_questionnaire(
+                questionnaire=questionnaire,
+                questionnaire_code=questionnaire_code,
+                spec_version=spec_version,
+                locale=locale,
+            )
 
         definitions: list[QuestionDefinition] = []
 
@@ -256,6 +265,49 @@ class QuestionnaireDefinitionMapper:
         return self._map_options(
             selectable_choices
         )
+
+    @staticmethod
+    def _validate_questionnaire(
+            *,
+            questionnaire: Questionnaire,
+            questionnaire_code: str,
+            spec_version: str,
+            locale: str,
+    ) -> None:
+        if not isinstance(
+                questionnaire,
+                Questionnaire,
+        ):
+            raise TypeError(
+                "questionnaire must be a Questionnaire or None"
+            )
+
+        if (
+                questionnaire.questionnaire_code
+                != questionnaire_code
+        ):
+            raise ValueError(
+                "questionnaire code does not match "
+                "definition questionnaire code"
+            )
+
+        if (
+                questionnaire.spec_version
+                != spec_version
+        ):
+            raise ValueError(
+                "questionnaire version does not match "
+                "definition spec_version"
+            )
+
+        if (
+                questionnaire.locale.lower()
+                != locale.lower()
+        ):
+            raise ValueError(
+                "questionnaire locale does not match "
+                "definition locale"
+            )
 
     @staticmethod
     def _map_allowed_value_ids(

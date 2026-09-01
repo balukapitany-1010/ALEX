@@ -1,10 +1,12 @@
 import json
+import pytest
 from pathlib import Path
 from alex.esg.domain.question_category import QuestionCategory
 from alex.esg.domain.question_type import QuestionType
 from alex.esg.mappers.questionnaire_definition_mapper import (
     QuestionnaireDefinitionMapper,
 )
+from alex.esg.domain.questionnaire import Questionnaire
 from alex.esg.services.json_import_service import JsonImportService
 
 
@@ -571,3 +573,122 @@ def test_mapper_uses_question_id_for_standalone_number_value():
             "043564F5_DETAIL",
         )
     )
+
+def test_mapper_uses_existing_questionnaire():
+    mapper = QuestionnaireDefinitionMapper()
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    data = {
+        "spec_version": "2.1",
+        "locale": "HU",
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "ID": "TEST_ID",
+                        "name": "E1",
+                        "title": "Teszt kérdés",
+                        "type": "text",
+                        "category": "E",
+                        "topic": "Teszt",
+                        "organization": "SZTFH",
+                        "organization_size": [
+                            "Large"
+                        ],
+                        "GeographicalRelevance": [
+                            "HU"
+                        ],
+                    }
+                ]
+            }
+        ],
+    }
+
+    result_questionnaire, definitions = (
+        mapper.map(
+            data,
+            questionnaire_code="SZTFH-ESG",
+            questionnaire=questionnaire,
+        )
+    )
+
+    assert (
+        result_questionnaire
+        is questionnaire
+    )
+
+    assert len(definitions) == 1
+
+    assert (
+        definitions[0].questionnaire
+        is questionnaire
+    )
+def test_mapper_rejects_existing_questionnaire_with_wrong_version():
+    mapper = QuestionnaireDefinitionMapper()
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.0",
+        locale="HU",
+    )
+
+    data = {
+        "spec_version": "2.1",
+        "locale": "HU",
+        "pages": [
+            {
+                "elements": []
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "questionnaire version does not match "
+            "definition spec_version"
+        ),
+    ):
+        mapper.map(
+            data,
+            questionnaire_code="SZTFH-ESG",
+            questionnaire=questionnaire,
+        )
+def test_mapper_accepts_existing_questionnaire_locale_case_difference():
+    mapper = QuestionnaireDefinitionMapper()
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="hu",
+    )
+
+    data = {
+        "spec_version": "2.1",
+        "locale": "HU",
+        "pages": [
+            {
+                "elements": []
+            }
+        ],
+    }
+
+    result_questionnaire, definitions = (
+        mapper.map(
+            data,
+            questionnaire_code="SZTFH-ESG",
+            questionnaire=questionnaire,
+        )
+    )
+
+    assert (
+        result_questionnaire
+        is questionnaire
+    )
+
+    assert definitions == ()
