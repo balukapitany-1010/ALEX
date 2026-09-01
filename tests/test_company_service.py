@@ -1,5 +1,5 @@
 import pytest
-
+from alex.esg.repositories.in_memory_company_repository import InMemoryCompanyRepository
 from alex.esg.services.company_service import CompanyService
 
 def test_company_services_can_create_companies():
@@ -69,3 +69,39 @@ def test_company_service_can_update_company():
     assert company.name == "Új Kft."
     assert company.tax_number == "12345678-2-41"
     assert company.country == "AT"
+
+def test_company_service_uses_injected_repository():
+    repository = (
+        InMemoryCompanyRepository()
+    )
+
+    service = CompanyService(
+        repository=repository
+    )
+
+    company = service.create_company(
+        name="Teszt Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    assert (repository.list_all() == (company,))
+
+    assert ( repository.get_by_tax_number("11111111-2-41")is company)
+def test_company_service_uses_in_memory_repository_by_default():
+    service = CompanyService()
+
+    company = service.create_company(
+        name="Teszt Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    assert (service.list_companies() == (company,))
+
+def test_company_service_rejects_invalid_repository():
+    with pytest.raises(
+        TypeError,
+        match="repository must be a CompanyRepository",
+    ):
+        CompanyService(repository="invalid")
