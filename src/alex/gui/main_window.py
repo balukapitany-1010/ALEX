@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from alex.esg.services.attachment_service import AttachmentService
+from alex.gui.views.attachments_view import AttachmentsView
 from alex.esg.services.questionnaire_definition_file_import_service import QuestionnaireDefinitionFileImportService
 from alex.esg.mappers.questionnaire_definition_mapper import QuestionnaireDefinitionMapper
 from alex.esg.mappers.submission_header_mapper import SubmissionHeaderMapper
@@ -41,6 +43,7 @@ class MainWindow(QMainWindow):
 
         # Alap service-ek
         self._company_service = CompanyService()
+        self._attachment_service = ( AttachmentService())
         self._supplier_service = SupplierService()
         self._relation_service = (
             SupplyChainRelationService()
@@ -193,6 +196,7 @@ class MainWindow(QMainWindow):
             )
         )
 
+
     def _setup_navigation(
         self,
     ) -> None:
@@ -213,10 +217,12 @@ class MainWindow(QMainWindow):
         self._navigation.setCurrentRow(0)
 
     def _setup_content(
-        self,
+            self,
     ) -> None:
         self._companies_view = CompaniesView(
-            company_service=self._company_service,
+            company_service=(
+                self._company_service
+            ),
         )
 
         self._content.addWidget(
@@ -224,21 +230,31 @@ class MainWindow(QMainWindow):
         )
 
         self._suppliers_view = SuppliersView(
-            supplier_service=self._supplier_service,
-            company_service=self._company_service,
-            relation_service=self._relation_service,
+            supplier_service=(
+                self._supplier_service
+            ),
+            company_service=(
+                self._company_service
+            ),
+            relation_service=(
+                self._relation_service
+            ),
         )
 
         self._content.addWidget(
             self._suppliers_view
         )
 
-        # Beküldések
-
         self._submissions_view = SubmissionsView(
-            submission_service=self._submission_service,
-            relation_service=self._relation_service,
-            questionnaire_service=self._questionnaire_service,
+            submission_service=(
+                self._submission_service
+            ),
+            relation_service=(
+                self._relation_service
+            ),
+            questionnaire_service=(
+                self._questionnaire_service
+            ),
             file_import_service=(
                 self._submission_file_import_service
             ),
@@ -251,33 +267,49 @@ class MainWindow(QMainWindow):
             self._submissions_view
         )
 
-        self._questionnaires_view = (
-            QuestionnairesView(
-                questionnaire_service=(
-                    self._questionnaire_service
-                ),
-                question_definition_service=(
-                    self._question_definition_service
-                ),
-                definition_file_import_service=(
-                    self._questionnaire_definition_file_import_service
-                ),
+        self._questionnaires_view = QuestionnairesView(
+            questionnaire_service=(
+                self._questionnaire_service
+            ),
+            question_definition_service=(
+                self._question_definition_service
+            ),
+            definition_file_import_service=(
+                self._questionnaire_definition_file_import_service
+            ),
+        )
+
+        self._content.addWidget(
+            self._questionnaires_view
+        )
+
+        self._attachments_view = AttachmentsView(
+            submission_service=(
+                self._submission_service
+            ),
+            attachment_service=(
+                self._attachment_service
+            ),
+            question_definition_service=(
+                self._question_definition_service
+            ),
+        )
+
+        self._content.addWidget(
+            self._attachments_view
+        )
+
+        self._content.addWidget(
+            self._create_placeholder_page(
+                "Riportok"
             )
         )
 
         self._content.addWidget(
-            self._questionnaires_view
+            self._create_placeholder_page(
+                "Adatbázis"
+            )
         )
-
-        self._content.addWidget(
-            self._questionnaires_view
-        )
-
-        self._content.addWidget(self._create_placeholder_page("Dokumentumok" ))
-
-        self._content.addWidget(self._create_placeholder_page("Riportok"))
-
-        self._content.addWidget(self._create_placeholder_page("Adatbázis"))
 
     def _setup_layout(
         self,
@@ -316,6 +348,9 @@ class MainWindow(QMainWindow):
 
         elif index == 3:
             self._questionnaires_view.refresh()
+
+        elif index == 4:
+            self._attachments_view.refresh()
 
     @staticmethod
     def _create_placeholder_page(
