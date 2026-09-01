@@ -1,6 +1,5 @@
 from PySide6.QtWidgets import (
     QDialog,
-    QFileDialog,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -12,16 +11,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from alex.gui.dialogs.submission_import_dialog import SubmissionImportDialog
-from alex.esg.services.submission_import_preview_service import (
-    SubmissionImportPreviewService,
-)
+
 from alex.esg.domain.submission import Submission
 from alex.esg.services.questionnaire_service import (
     QuestionnaireService,
 )
 from alex.esg.services.submission_file_import_service import (
     SubmissionFileImportService,
+)
+from alex.esg.services.submission_import_preview_service import (
+    SubmissionImportPreviewService,
 )
 from alex.esg.services.submission_service import (
     SubmissionService,
@@ -32,12 +31,14 @@ from alex.esg.services.supply_chain_relation_service import (
 from alex.esg.services.test_data_service import (
     add_test_answers,
 )
-
 from alex.gui.dialogs.submission_details_dialog import (
     SubmissionDetailsDialog,
 )
 from alex.gui.dialogs.submission_dialog import (
     SubmissionDialog,
+)
+from alex.gui.dialogs.submission_import_dialog import (
+    SubmissionImportDialog,
 )
 
 
@@ -54,17 +55,32 @@ class SubmissionsView(QWidget):
         super().__init__(parent)
 
         if not isinstance(
-                preview_service,
-                SubmissionImportPreviewService,
+            submission_service,
+            SubmissionService,
         ):
             raise TypeError(
-                "preview_service must be a "
-                "SubmissionImportPreviewService"
+                "submission_service must be a "
+                "SubmissionService"
             )
 
-        self._preview_service = (
-            preview_service
-        )
+        if not isinstance(
+            relation_service,
+            SupplyChainRelationService,
+        ):
+            raise TypeError(
+                "relation_service must be a "
+                "SupplyChainRelationService"
+            )
+
+        if not isinstance(
+            questionnaire_service,
+            QuestionnaireService,
+        ):
+            raise TypeError(
+                "questionnaire_service must be a "
+                "QuestionnaireService"
+            )
+
         if not isinstance(
             file_import_service,
             SubmissionFileImportService,
@@ -74,23 +90,42 @@ class SubmissionsView(QWidget):
                 "SubmissionFileImportService"
             )
 
+        if not isinstance(
+            preview_service,
+            SubmissionImportPreviewService,
+        ):
+            raise TypeError(
+                "preview_service must be a "
+                "SubmissionImportPreviewService"
+            )
+
         self._submission_service = (
             submission_service
         )
+
         self._relation_service = (
             relation_service
         )
+
         self._questionnaire_service = (
             questionnaire_service
         )
+
         self._file_import_service = (
             file_import_service
+        )
+
+        self._preview_service = (
+            preview_service
         )
 
         self._open_button = QPushButton(
             "Megnyitás"
         )
-        self._open_button.setEnabled(False)
+
+        self._open_button.setEnabled(
+            False
+        )
 
         self._add_button = QPushButton(
             "+ Új tesztbeküldés"
@@ -101,15 +136,17 @@ class SubmissionsView(QWidget):
         )
 
         self._search_input = QLineEdit()
+
         self._table = QTableWidget()
 
         self._setup_ui()
         self._connect_signals()
-        self._refresh_table()
-        self._preview_service = preview_service
+        self.refresh()
 
     def _setup_ui(self) -> None:
-        main_layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(
+            self
+        )
 
         title = QLabel(
             "Beküldések"
@@ -119,7 +156,9 @@ class SubmissionsView(QWidget):
         font.setPointSize(20)
         font.setBold(True)
 
-        title.setFont(font)
+        title.setFont(
+            font
+        )
 
         main_layout.addWidget(
             title
@@ -160,7 +199,9 @@ class SubmissionsView(QWidget):
         )
 
     def _setup_table(self) -> None:
-        self._table.setColumnCount(6)
+        self._table.setColumnCount(
+            6
+        )
 
         self._table.setHorizontalHeaderLabels(
             [
@@ -240,6 +281,25 @@ class SubmissionsView(QWidget):
             self._open_submission_from_double_click
         )
 
+    def refresh(self) -> None:
+        self._table.setRowCount(
+            0
+        )
+
+        for submission in (
+            self._submission_service
+            .list_submissions()
+        ):
+            self._add_submission_to_table(
+                submission
+            )
+
+        self._filter_submissions(
+            self._search_input.text()
+        )
+
+        self._update_button_state()
+
     def _update_button_state(self) -> None:
         has_selection = bool(
             self._table
@@ -275,8 +335,11 @@ class SubmissionsView(QWidget):
         if submission_id_item is None:
             return None
 
-        return self._submission_service.get_by_id(
-            submission_id_item.text()
+        return (
+            self._submission_service
+            .get_by_id(
+                submission_id_item.text()
+            )
         )
 
     def _open_selected_submission(
@@ -301,31 +364,11 @@ class SubmissionsView(QWidget):
         row: int,
         column: int,
     ) -> None:
-        submission_id_item = (
-            self._table.item(
-                row,
-                0,
-            )
+        self._table.selectRow(
+            row
         )
 
-        if submission_id_item is None:
-            return
-
-        submission = (
-            self._submission_service.get_by_id(
-                submission_id_item.text()
-            )
-        )
-
-        if submission is None:
-            return
-
-        dialog = SubmissionDetailsDialog(
-            submission=submission,
-            parent=self,
-        )
-
-        dialog.exec()
+        self._open_selected_submission()
 
     def _open_add_submission_dialog(
         self,
@@ -339,6 +382,32 @@ class SubmissionsView(QWidget):
             self._questionnaire_service
             .list_questionnaires()
         )
+
+        if not questionnaires:
+            QMessageBox.warning(
+                self,
+                "Nincs kérdőív",
+                (
+                    "Először importálj egy "
+                    "kérdőív-definíciót a "
+                    "Kérdőívek oldalon."
+                ),
+            )
+
+            return
+
+        if not relations:
+            QMessageBox.warning(
+                self,
+                "Nincs ellátási lánc kapcsolat",
+                (
+                    "A tesztbeküldés létrehozásához "
+                    "először szükség van egy "
+                    "kötelezett–beszállító kapcsolatra."
+                ),
+            )
+
+            return
 
         dialog = SubmissionDialog(
             relations=relations,
@@ -381,22 +450,21 @@ class SubmissionsView(QWidget):
 
             return
 
-        self._refresh_table()
+        self.refresh()
 
     def _import_json(self) -> None:
         dialog = SubmissionImportDialog(
-            preview_service=self._preview_service,
+            preview_service=(
+                self._preview_service
+            ),
             parent=self,
         )
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
 
         result_code = dialog.exec()
 
         if (
-                result_code
-                != QDialog.DialogCode.Accepted
+            result_code
+            != QDialog.DialogCode.Accepted
         ):
             return
 
@@ -417,9 +485,9 @@ class SubmissionsView(QWidget):
             )
 
         except (
-                FileNotFoundError,
-                TypeError,
-                ValueError,
+            FileNotFoundError,
+            TypeError,
+            ValueError,
         ) as error:
             QMessageBox.critical(
                 self,
@@ -433,7 +501,7 @@ class SubmissionsView(QWidget):
             result
         )
 
-        self._refresh_table()
+        self.refresh()
 
     def _show_import_result(
         self,
@@ -460,7 +528,9 @@ class SubmissionsView(QWidget):
 
         if errors:
             lines.append("")
-            lines.append("Hibák:")
+            lines.append(
+                "Hibák:"
+            )
 
             for issue in errors:
                 lines.append(
@@ -499,26 +569,13 @@ class SubmissionsView(QWidget):
             message,
         )
 
-    def _refresh_table(self) -> None:
-        self._table.setRowCount(0)
-
-        for submission in (
-            self._submission_service
-            .list_submissions()
-        ):
-            self._add_submission_to_table(
-                submission
-            )
-
-        self._filter_submissions(
-            self._search_input.text()
-        )
-
     def _add_submission_to_table(
         self,
         submission: Submission,
     ) -> None:
-        row = self._table.rowCount()
+        row = (
+            self._table.rowCount()
+        )
 
         self._table.insertRow(
             row
@@ -612,9 +669,11 @@ class SubmissionsView(QWidget):
             for column in range(
                 self._table.columnCount()
             ):
-                item = self._table.item(
-                    row,
-                    column,
+                item = (
+                    self._table.item(
+                        row,
+                        column,
+                    )
                 )
 
                 if item is not None:
@@ -622,9 +681,13 @@ class SubmissionsView(QWidget):
                         item.text().lower()
                     )
 
-            matches = any(
-                search_text in value
-                for value in searchable_values
+            matches = (
+                not search_text
+                or any(
+                    search_text in value
+                    for value
+                    in searchable_values
+                )
             )
 
             self._table.setRowHidden(

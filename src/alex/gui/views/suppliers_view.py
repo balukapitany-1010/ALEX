@@ -355,11 +355,15 @@ class SuppliersView(QWidget):
             has_selection
         )
 
+    def refresh(self) -> None:
+        self._refresh_table()
+        self._refresh_relations_table()
+
     def _refresh_table(self) -> None:
         self._table.setRowCount(0)
 
         for supplier in (
-            self._supplier_service.list_suppliers()
+                self._supplier_service.list_suppliers()
         ):
             self._add_supplier_to_table(
                 supplier

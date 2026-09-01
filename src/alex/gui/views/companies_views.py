@@ -29,13 +29,23 @@ class CompaniesView(QWidget):
 
         self._search_input = QLineEdit()
 
-        self._add_button = QPushButton("+ Új cég")
+        self._add_button = QPushButton(
+            "+ Új cég"
+        )
 
-        self._open_button = QPushButton("Megnyitás")
-        self._open_button.setEnabled(False)
+        self._open_button = QPushButton(
+            "Megnyitás"
+        )
+        self._open_button.setEnabled(
+            False
+        )
 
-        self._edit_button = QPushButton("Szerkesztés")
-        self._edit_button.setEnabled(False)
+        self._edit_button = QPushButton(
+            "Szerkesztés"
+        )
+        self._edit_button.setEnabled(
+            False
+        )
 
         self._table = QTableWidget()
 
@@ -44,20 +54,30 @@ class CompaniesView(QWidget):
         self._refresh_table()
 
     def _setup_ui(self) -> None:
-        main_layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(
+            self
+        )
 
-        # Cím
-        title = QLabel("Cégek")
+        title = QLabel(
+            "Cégek"
+        )
 
         font = title.font()
-        font.setPointSize(20)
-        font.setBold(True)
+        font.setPointSize(
+            20
+        )
+        font.setBold(
+            True
+        )
 
-        title.setFont(font)
+        title.setFont(
+            font
+        )
 
-        main_layout.addWidget(title)
+        main_layout.addWidget(
+            title
+        )
 
-        # Felső eszköztár
         toolbar_layout = QHBoxLayout()
 
         self._search_input.setPlaceholderText(
@@ -85,7 +105,6 @@ class CompaniesView(QWidget):
             toolbar_layout
         )
 
-        # Cégtábla
         self._setup_table()
 
         main_layout.addWidget(
@@ -93,7 +112,9 @@ class CompaniesView(QWidget):
         )
 
     def _setup_table(self) -> None:
-        self._table.setColumnCount(3)
+        self._table.setColumnCount(
+            3
+        )
 
         self._table.setHorizontalHeaderLabels(
             [
@@ -103,7 +124,9 @@ class CompaniesView(QWidget):
             ]
         )
 
-        header = self._table.horizontalHeader()
+        header = (
+            self._table.horizontalHeader()
+        )
 
         header.setSectionResizeMode(
             0,
@@ -157,12 +180,19 @@ class CompaniesView(QWidget):
             self._open_company_from_double_click
         )
 
-    def _open_add_company_dialog(self) -> None:
-        dialog = CompanyDialog(self)
+    def _open_add_company_dialog(
+        self,
+    ) -> None:
+        dialog = CompanyDialog(
+            self
+        )
 
         result = dialog.exec()
 
-        if result != QDialog.DialogCode.Accepted:
+        if (
+            result
+            != QDialog.DialogCode.Accepted
+        ):
             return
 
         try:
@@ -172,7 +202,10 @@ class CompaniesView(QWidget):
                 country=dialog.country,
             )
 
-        except (TypeError, ValueError) as error:
+        except (
+            TypeError,
+            ValueError,
+        ) as error:
             QMessageBox.critical(
                 self,
                 "Hibás cégadat",
@@ -188,7 +221,9 @@ class CompaniesView(QWidget):
     ) -> None:
         row = self._table.rowCount()
 
-        self._table.insertRow(row)
+        self._table.insertRow(
+            row
+        )
 
         self._table.setItem(
             row,
@@ -214,12 +249,20 @@ class CompaniesView(QWidget):
             ),
         )
 
-    def _refresh_table(self) -> None:
-        self._table.setRowCount(0)
+    def refresh(self) -> None:
+        self._refresh_table()
 
-        for company in (
-            self._company_service.list_companies()
-        ):
+    def _refresh_table(self) -> None:
+        self._table.setRowCount(
+            0
+        )
+
+        companies = (
+            self._company_service
+            .list_companies()
+        )
+
+        for company in companies:
             self._add_company_to_table(
                 company
             )
@@ -228,42 +271,59 @@ class CompaniesView(QWidget):
             self._search_input.text()
         )
 
+        self._table.clearSelection()
+
         self._update_button_state()
 
     def _filter_companies(
         self,
         text: str,
     ) -> None:
-        search_text = text.strip().lower()
+        search_text = (
+            text.strip().lower()
+        )
 
         for row in range(
             self._table.rowCount()
         ):
-            company_name_item = self._table.item(
-                row,
-                0,
+            company_name_item = (
+                self._table.item(
+                    row,
+                    0,
+                )
             )
 
-            tax_number_item = self._table.item(
-                row,
-                1,
+            tax_number_item = (
+                self._table.item(
+                    row,
+                    1,
+                )
             )
 
             company_name = (
-                company_name_item.text().lower()
-                if company_name_item is not None
+                company_name_item
+                .text()
+                .lower()
+                if company_name_item
+                is not None
                 else ""
             )
 
             tax_number = (
-                tax_number_item.text().lower()
-                if tax_number_item is not None
+                tax_number_item
+                .text()
+                .lower()
+                if tax_number_item
+                is not None
                 else ""
             )
 
             matches = (
-                search_text in company_name
-                or search_text in tax_number
+                not search_text
+                or search_text
+                in company_name
+                or search_text
+                in tax_number
             )
 
             self._table.setRowHidden(
@@ -271,11 +331,24 @@ class CompaniesView(QWidget):
                 not matches,
             )
 
-    def _update_button_state(self) -> None:
+    def _update_button_state(
+        self,
+    ) -> None:
+        selection_model = (
+            self._table.selectionModel()
+        )
+
+        if selection_model is None:
+            self._open_button.setEnabled(
+                False
+            )
+            self._edit_button.setEnabled(
+                False
+            )
+            return
+
         selected_rows = (
-            self._table
-            .selectionModel()
-            .selectedRows()
+            selection_model.selectedRows()
         )
 
         has_selection = bool(
@@ -293,20 +366,29 @@ class CompaniesView(QWidget):
     def _get_selected_company(
         self,
     ) -> Company | None:
+        selection_model = (
+            self._table.selectionModel()
+        )
+
+        if selection_model is None:
+            return None
+
         selected_rows = (
-            self._table
-            .selectionModel()
-            .selectedRows()
+            selection_model.selectedRows()
         )
 
         if not selected_rows:
             return None
 
-        row = selected_rows[0].row()
+        row = (
+            selected_rows[0].row()
+        )
 
-        tax_number_item = self._table.item(
-            row,
-            1,
+        tax_number_item = (
+            self._table.item(
+                row,
+                1,
+            )
         )
 
         if tax_number_item is None:
@@ -319,8 +401,12 @@ class CompaniesView(QWidget):
             )
         )
 
-    def _open_selected_company(self) -> None:
-        company = self._get_selected_company()
+    def _open_selected_company(
+        self,
+    ) -> None:
+        company = (
+            self._get_selected_company()
+        )
 
         if company is None:
             return
@@ -334,9 +420,11 @@ class CompaniesView(QWidget):
         row: int,
         _column: int,
     ) -> None:
-        tax_number_item = self._table.item(
-            row,
-            1,
+        tax_number_item = (
+            self._table.item(
+                row,
+                1,
+            )
         )
 
         if tax_number_item is None:
@@ -364,15 +452,23 @@ class CompaniesView(QWidget):
             self,
             "Cég adatai",
             (
-                f"Cégnév: {company.name}\n"
-                f"Adószám: {company.tax_number}\n"
-                f"Ország: {company.country or '-'}\n"
-                f"Company key: {company.company_key}"
+                f"Cégnév: "
+                f"{company.name}\n"
+                f"Adószám: "
+                f"{company.tax_number}\n"
+                f"Ország: "
+                f"{company.country or '-'}\n"
+                f"Company key: "
+                f"{company.company_key}"
             ),
         )
 
-    def _edit_selected_company(self) -> None:
-        company = self._get_selected_company()
+    def _edit_selected_company(
+        self,
+    ) -> None:
+        company = (
+            self._get_selected_company()
+        )
 
         if company is None:
             return
@@ -384,7 +480,10 @@ class CompaniesView(QWidget):
 
         result = dialog.exec()
 
-        if result != QDialog.DialogCode.Accepted:
+        if (
+            result
+            != QDialog.DialogCode.Accepted
+        ):
             return
 
         try:
@@ -394,7 +493,10 @@ class CompaniesView(QWidget):
                 country=dialog.country,
             )
 
-        except (TypeError, ValueError) as error:
+        except (
+            TypeError,
+            ValueError,
+        ) as error:
             QMessageBox.critical(
                 self,
                 "Hibás cégadat",

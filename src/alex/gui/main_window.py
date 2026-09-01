@@ -215,40 +215,40 @@ class MainWindow(QMainWindow):
     def _setup_content(
         self,
     ) -> None:
-
-        self._content.addWidget(
-            CompaniesView(
-                company_service=(
-                    self._company_service
-                ),
-            )
-        )
-
-
-        self._questionnaire_service.get_or_create(
-            questionnaire_code="SZTFH-ESG",
-            spec_version="2.1",
-            locale="hu",
+        self._companies_view = CompaniesView(
+            company_service=self._company_service,
         )
 
         self._content.addWidget(
-            SuppliersView(
-                supplier_service=(self._supplier_service),
-                company_service=(self._company_service),
-                relation_service=(self._relation_service),
-            )
+            self._companies_view
+        )
+
+        self._suppliers_view = SuppliersView(
+            supplier_service=self._supplier_service,
+            company_service=self._company_service,
+            relation_service=self._relation_service,
+        )
+
+        self._content.addWidget(
+            self._suppliers_view
         )
 
         # Beküldések
 
+        self._submissions_view = SubmissionsView(
+            submission_service=self._submission_service,
+            relation_service=self._relation_service,
+            questionnaire_service=self._questionnaire_service,
+            file_import_service=(
+                self._submission_file_import_service
+            ),
+            preview_service=(
+                self._submission_import_preview_service
+            ),
+        )
+
         self._content.addWidget(
-            SubmissionsView(
-                submission_service=(self._submission_service),
-                relation_service=(self._relation_service),
-                questionnaire_service=(self._questionnaire_service),
-                file_import_service=(self._submission_file_import_service),
-                preview_service=(self._submission_import_preview_service),
-            )
+            self._submissions_view
         )
 
         self._questionnaires_view = (
@@ -305,7 +305,16 @@ class MainWindow(QMainWindow):
             self,
             index: int,
     ) -> None:
-        if index == 3:
+        if index == 0:
+            self._companies_view.refresh()
+
+        elif index == 1:
+            self._suppliers_view.refresh()
+
+        elif index == 2:
+            self._submissions_view.refresh()
+
+        elif index == 3:
             self._questionnaires_view.refresh()
 
     @staticmethod
