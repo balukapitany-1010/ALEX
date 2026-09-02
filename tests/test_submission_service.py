@@ -1,5 +1,5 @@
 import pytest
-
+from alex.esg.repositories.in_memory_submission_repository import InMemorySubmissionRepository
 from alex.esg.domain.company import Company
 from alex.esg.domain.questionnaire import Questionnaire
 from alex.esg.domain.supplier import Supplier
@@ -263,3 +263,143 @@ def test_submission_service_rejects_invalid_submission():
         match="submission must be a Submission",
     ):
         service.add_submission("invalid")
+
+def test_submission_service_uses_injected_repository():
+    repository = (
+        InMemorySubmissionRepository()
+    )
+
+    service = SubmissionService(
+        repository=repository
+    )
+
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    submission = service.create_submission(
+        relation=relation,
+        submitter=None,
+        questionnaire=questionnaire,
+        period="2026-Q2",
+    )
+
+    assert (
+        repository.list_all()
+        == (submission,)
+    )
+
+
+def test_submission_service_uses_in_memory_repository_by_default():
+    service = SubmissionService()
+
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    submission = service.create_submission(
+        relation=relation,
+        submitter=None,
+        questionnaire=questionnaire,
+        period="2026-Q2",
+    )
+
+    assert (
+        service.list_submissions()
+        == (submission,)
+    )
+
+
+def test_submission_service_rejects_invalid_repository():
+    with pytest.raises(
+        TypeError,
+        match=(
+            "repository must be a "
+            "SubmissionRepository"
+        ),
+    ):
+        SubmissionService(
+            repository="invalid"
+        )
+
+def test_submission_service_can_remove_submission():
+    service = SubmissionService()
+
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    submission = service.create_submission(
+        relation=relation,
+        submitter=None,
+        questionnaire=questionnaire,
+        period="2026-Q2",
+    )
+
+    removed = service.remove_submission(
+        submission.submission_id
+    )
+
+    assert removed is submission
+
+    assert (
+        service.list_submissions()
+        == ()
+    )

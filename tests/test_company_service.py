@@ -105,3 +105,22 @@ def test_company_service_rejects_invalid_repository():
         match="repository must be a CompanyRepository",
     ):
         CompanyService(repository="invalid")
+def test_company_service_can_remove_company():
+    service = CompanyService()
+
+    company = service.create_company(
+        name="Teszt Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    removed = service.remove_company(
+        company.company_key
+    )
+
+    assert removed is company
+
+    assert (
+        service.list_companies()
+        == ()
+    )

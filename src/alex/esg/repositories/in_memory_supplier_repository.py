@@ -94,3 +94,28 @@ class InMemorySupplierRepository(
                 return supplier
 
         return None
+
+    def update(
+            self,
+            supplier: Supplier,
+    ) -> Supplier:
+        if not isinstance(
+                supplier,
+                Supplier,
+        ):
+            raise TypeError("supplier must be a Supplier")
+        existing = self.get_by_key(supplier.company_key)
+
+        if existing is None:
+            raise ValueError("supplier does not exist")
+        return supplier
+
+    def remove(
+            self,
+            company_key: str,
+    ) -> Supplier:
+        supplier = self.get_by_key(company_key)
+        if supplier is None:
+            raise ValueError("supplier does not exist")
+        self._suppliers.remove(supplier)
+        return supplier

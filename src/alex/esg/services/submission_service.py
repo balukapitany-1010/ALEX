@@ -1,20 +1,32 @@
-
-
 from alex.esg.domain.company import Company
 from alex.esg.domain.questionnaire import Questionnaire
 from alex.esg.domain.submission import Submission
 from alex.esg.domain.supply_chain_relation import SupplyChainRelation
-
+from alex.esg.repositories.in_memory_submission_repository import InMemorySubmissionRepository
+from alex.esg.repositories.submission_repository import SubmissionRepository
 
 
 class SubmissionService:
-    def __init__(self) -> None:
-        self._submissions: list[Submission] = []
+    def __init__(
+        self,
+        repository: SubmissionRepository | None = None,
+    ) -> None:
+        if repository is None:
+            repository = (InMemorySubmissionRepository())
+
+        if not isinstance(
+            repository,
+            SubmissionRepository,
+        ):
+            raise TypeError("repository must be a SubmissionRepository")
+
+        self._repository = repository
 
     def create_submission(
         self,
+        *,
         relation: SupplyChainRelation,
-        submitter: Company,
+        submitter: Company | None,
         questionnaire: Questionnaire,
         period: str,
     ) -> Submission:
@@ -25,28 +37,7 @@ class SubmissionService:
             period=period,
         )
 
-        self._submissions.append(submission)
-
-        return submission
-
-    def list_submissions(
-        self,
-    ) -> tuple[Submission, ...]:
-        return tuple(self._submissions)
-
-    def get_by_id(
-            self,
-            submission_id: str,
-    ) -> Submission | None:
-        if not isinstance(submission_id, str):
-            raise TypeError("submission_id must be a string")
-        normalized_id = submission_id.strip()
-        if not normalized_id:
-            raise ValueError("submission_id must not be empty")
-        for submission in self._submissions:
-            if str(submission.submission_id) == normalized_id:
-                return submission
-        return None
+        return self._repository.add(submission)
 
     def add_submission(
             self,
@@ -56,14 +47,43 @@ class SubmissionService:
                 submission,
                 Submission,
         ):
-            raise TypeError("submission must be a Submission")
+            raise TypeError(
+                "submission must be a Submission"
+            )
 
-        for existing in self._submissions:
-            if (
-                    existing.submission_id == submission.submission_id
-            ):
-                raise ValueError("submission already exists")
+        existing = (
+            self._repository.get_by_id(
+                submission.submission_id
+            )
+        )
 
-        self._submissions.append(submission)
+        if existing is not None:
+            raise ValueError(
+                "submission already exists"
+            )
 
-        return submission
+        return self._repository.add(
+            submission
+        )
+
+    def list_submissions(
+        self,
+    ) -> tuple[
+        Submission,
+        ...
+    ]:
+        return self._repository.list_all()
+
+    def get_by_id(
+        self,
+        submission_id: str,
+    ) -> Submission | None:
+        return self._repository.get_by_id(submission_id)
+
+    def remove_submission(
+            self,
+            submission_id: str,
+    ) -> Submission:
+        return self._repository.remove(
+            submission_id
+        )

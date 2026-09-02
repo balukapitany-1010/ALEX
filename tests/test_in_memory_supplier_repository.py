@@ -128,3 +128,92 @@ def test_repository_rejects_company_instead_of_supplier():
         repository.add(
             company
         )
+
+def test_repository_updates_existing_supplier():
+    repository = (
+        InMemorySupplierRepository()
+    )
+
+    supplier = Supplier(
+        name="Régi Beszállító Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    repository.add(
+        supplier
+    )
+
+    supplier.update(
+        name="Új Beszállító Kft.",
+        country="AT",
+    )
+
+    result = repository.update(
+        supplier
+    )
+
+    assert result is supplier
+    assert result.name == "Új Beszállító Kft."
+    assert result.country == "AT"
+
+
+def test_repository_rejects_update_for_unknown_supplier():
+    repository = (
+        InMemorySupplierRepository()
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="supplier does not exist",
+    ):
+        repository.update(
+            supplier
+        )
+
+
+def test_repository_removes_supplier():
+    repository = (
+        InMemorySupplierRepository()
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    repository.add(
+        supplier
+    )
+
+    removed = repository.remove(
+        supplier.company_key
+    )
+
+    assert removed is supplier
+
+    assert (
+        repository.list_all()
+        == ()
+    )
+
+
+def test_repository_rejects_removing_unknown_supplier():
+    repository = (
+        InMemorySupplierRepository()
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="supplier does not exist",
+    ):
+        repository.remove(
+            "unknown-supplier-key"
+        )

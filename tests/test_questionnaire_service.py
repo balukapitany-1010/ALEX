@@ -117,3 +117,4 @@ def test_questionnaire_service_get_or_create_reuses_questionnaire():
     assert len(
         service.list_questionnaires()
     ) == 1
+

@@ -30,3 +30,17 @@ class CompanyRepository(ABC):
         company_key: str,
     ) -> Company | None:
         pass
+
+    @abstractmethod
+    def update(
+            self,
+            company: Company,
+    ) -> Company:
+        pass
+
+    @abstractmethod
+    def remove(
+            self,
+            company_key: str,
+    ) -> Company:
+        pass

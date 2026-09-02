@@ -112,3 +112,99 @@ def test_repository_rejects_duplicate_tax_number():
                 country="HU",
             )
         )
+
+def test_repository_updates_existing_company():
+    repository = (
+        InMemoryCompanyRepository()
+    )
+
+    company = Company(
+        name="Régi Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    repository.add(
+        company
+    )
+
+    company.update(
+        name="Új Kft.",
+        country="AT",
+    )
+
+    result = repository.update(
+        company
+    )
+
+    assert result is company
+    assert result.name == "Új Kft."
+    assert result.country == "AT"
+
+
+def test_repository_rejects_update_for_unknown_company():
+    repository = (
+        InMemoryCompanyRepository()
+    )
+
+    company = Company(
+        name="Teszt Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="company does not exist",
+    ):
+        repository.update(
+            company
+        )
+
+
+def test_repository_removes_company():
+    repository = (
+        InMemoryCompanyRepository()
+    )
+
+    company = Company(
+        name="Teszt Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    repository.add(
+        company
+    )
+
+    removed = repository.remove(
+        company.company_key
+    )
+
+    assert removed is company
+
+    assert (
+        repository.list_all()
+        == ()
+    )
+
+    assert (
+        repository.get_by_key(
+            company.company_key
+        )
+        is None
+    )
+
+
+def test_repository_rejects_removing_unknown_company():
+    repository = (
+        InMemoryCompanyRepository()
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="company does not exist",
+    ):
+        repository.remove(
+            "unknown-company-key"
+        )

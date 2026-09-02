@@ -2,9 +2,8 @@ import pytest
 
 from alex.esg.domain.company import Company
 from alex.esg.domain.supplier import Supplier
-from alex.esg.services.supply_chain_relation_service import (
-    SupplyChainRelationService,
-)
+from alex.esg.services.supply_chain_relation_service import SupplyChainRelationService
+from alex.esg.repositories.in_memory_supply_chain_relation_repository import InMemorySupplyChainRelationRepository
 
 
 def test_service_can_create_relation():
@@ -47,9 +46,7 @@ def test_service_lists_relations():
         supplier=supplier,
     )
 
-    assert service.list_relations() == (
-        relation,
-    )
+    assert service.list_relations() == (relation,)
 
 
 def test_service_rejects_duplicate_relation():
@@ -113,11 +110,7 @@ def test_same_supplier_can_belong_to_multiple_requesters():
 
     assert relation1 is not relation2
 
-    assert len(
-        service.list_relations_for_supplier(
-            supplier
-        )
-    ) == 2
+    assert len(service.list_relations_for_supplier(supplier)) == 2
 
 
 def test_service_lists_relations_for_requester():
@@ -148,9 +141,100 @@ def test_service_lists_relations_for_requester():
         supplier=supplier2,
     )
 
-    assert service.list_relations_for_requester(
-        requester
-    ) == (
+    assert service.list_relations_for_requester(requester) == (
         relation1,
         relation2,
+    )
+
+def test_relation_service_uses_injected_repository():
+    repository = (InMemorySupplyChainRelationRepository())
+
+    service = SupplyChainRelationService(
+        repository=repository
+    )
+
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = service.create_relation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    assert (repository.list_all() == (relation,))
+
+
+def test_relation_service_uses_in_memory_repository_by_default():
+    service = (SupplyChainRelationService())
+
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = service.create_relation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    assert (service.list_relations() == (relation,))
+
+
+def test_relation_service_rejects_invalid_repository():
+    with pytest.raises(
+        TypeError,
+        match=(
+            "repository must be a "
+            "SupplyChainRelationRepository"
+        ),
+    ):
+        SupplyChainRelationService(repository="invalid")
+
+def test_relation_service_can_remove_relation():
+    service = (
+        SupplyChainRelationService()
+    )
+
+    requester = Company(
+        name="Kötelezett Zrt.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+
+    supplier = Supplier(
+        name="Beszállító Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+
+    relation = service.create_relation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    removed = service.remove_relation(
+        relation.relation_id
+    )
+
+    assert removed is relation
+
+    assert (
+        service.list_relations()
+        == ()
     )

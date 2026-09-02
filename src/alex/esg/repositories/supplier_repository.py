@@ -30,3 +30,17 @@ class SupplierRepository(ABC):
         company_key: str,
     ) -> Supplier | None:
         pass
+
+    @abstractmethod
+    def update(
+            self,
+            supplier: Supplier,
+    ) -> Supplier:
+        pass
+
+    @abstractmethod
+    def remove(
+            self,
+            company_key: str,
+    ) -> Supplier:
+        pass

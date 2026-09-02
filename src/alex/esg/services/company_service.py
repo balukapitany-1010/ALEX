@@ -47,6 +47,12 @@ class CompanyService:
     ) -> tuple[Company, ...]:
         return self._repository.list_all()
 
+    def remove_company(
+            self,
+            company_key: str,
+    ) -> Company:
+        return self._repository.remove(company_key)
+
     def get_by_tax_number(
         self,
         tax_number: str,
