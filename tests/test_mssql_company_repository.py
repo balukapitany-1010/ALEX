@@ -102,30 +102,3 @@ def test_mssql_repository_rolls_back_when_add_fails():
     connection.rollback.assert_called_once()
     connection.close.assert_called_once()
 
-def test_repository_lists_all_companies():
-    connection_factory = (
-        SqlServerConnectionFactory()
-    )
-
-    repository = MssqlCompanyRepository(
-        connection_factory=connection_factory,
-    )
-
-    companies = repository.list_all()
-
-    assert isinstance(companies, tuple)
-
-    print()
-    print(
-        f"Betöltött cégek száma: "
-        f"{len(companies)}"
-    )
-
-    for company in companies[:5]:
-        print(
-            company.company_key,
-            "|",
-            company.name,
-            "|",
-            company.tax_number,
-        )

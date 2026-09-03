@@ -334,6 +334,51 @@ class TestCompany(unittest.TestCase):
                 updated_at=None,
             )
 
+    def test_company_update_does_not_change_timestamp_when_values_are_same(
+            self,
+    ):
+        company = Company(
+            name="Teszt Kft.",
+            tax_number="12345678-2-41",
+            country="HU",
+        )
+
+        original_updated_at = (
+            company.updated_at
+        )
+
+        company.update(
+            name="Teszt Kft.",
+            country="HU",
+        )
+
+        self.assertEqual(
+            company.updated_at,
+            original_updated_at,
+        )
+
+    def test_rename_does_not_change_timestamp_when_name_is_same(
+            self,
+    ):
+        company = Company(
+            name="Teszt Kft.",
+            tax_number="12345678-2-41",
+            country="HU",
+        )
+
+        original_updated_at = (
+            company.updated_at
+        )
+
+        company.rename(
+            "Teszt Kft."
+        )
+
+        self.assertEqual(
+            company.updated_at,
+            original_updated_at,
+        )
+
 
 
     if __name__=="__main__":

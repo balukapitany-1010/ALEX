@@ -13,6 +13,9 @@ if TYPE_CHECKING:
 
 class Submission:
     def __init__(self, relation: SupplyChainRelation, submitter: Company | None, questionnaire: Questionnaire, period: str,submitted_at: datetime | None = None, status: SubmissionStatus = SubmissionStatus.SUBMITTED, organization_size:str | None = None):
+
+
+
         if not isinstance(relation, SupplyChainRelation):
             raise TypeError("relation must be supplychain relation")
 
@@ -236,6 +239,135 @@ class Submission:
 
     def has_attachment(self, attachment_id: str) -> bool:
         return self.get_attachment(attachment_id) is not None
+
+    @classmethod
+    def rehydrate(
+            cls,
+            *,
+            submission_id: int | str,
+            relation: SupplyChainRelation,
+            submitter: Company | None,
+            questionnaire: Questionnaire,
+            period: str,
+            submitted_at: datetime | None,
+            status: SubmissionStatus,
+            organization_size: str | None,
+            created_at: datetime,
+            updated_at: datetime | None,
+    ) -> "Submission":
+        if not isinstance(
+                submission_id,
+                (int, str),
+        ):
+            raise TypeError(
+                "submission_id must be an int or string"
+            )
+
+        normalized_submission_id = str(
+            submission_id
+        ).strip()
+
+        if not normalized_submission_id:
+            raise ValueError(
+                "submission_id cannot be empty"
+            )
+
+        if not isinstance(
+                created_at,
+                datetime,
+        ):
+            raise TypeError(
+                "created_at must be a datetime"
+            )
+
+        if (
+                updated_at is not None
+                and not isinstance(
+            updated_at,
+            datetime,
+        )
+        ):
+            raise TypeError(
+                "updated_at must be a datetime or None"
+            )
+
+        if created_at.tzinfo is None:
+            created_at = (
+                created_at.replace(
+                    tzinfo=timezone.utc
+                )
+            )
+        else:
+            created_at = (
+                created_at.astimezone(
+                    timezone.utc
+                )
+            )
+
+        if updated_at is not None:
+            if updated_at.tzinfo is None:
+                updated_at = (
+                    updated_at.replace(
+                        tzinfo=timezone.utc
+                    )
+                )
+            else:
+                updated_at = (
+                    updated_at.astimezone(
+                        timezone.utc
+                    )
+                )
+
+            if updated_at < created_at:
+                raise ValueError(
+                    "updated_at cannot be before created_at"
+                )
+
+        if submitted_at is not None:
+            if not isinstance(
+                    submitted_at,
+                    datetime,
+            ):
+                raise TypeError(
+                    "submitted_at must be a datetime or None"
+                )
+
+            if submitted_at.tzinfo is None:
+                submitted_at = (
+                    submitted_at.replace(
+                        tzinfo=timezone.utc
+                    )
+                )
+            else:
+                submitted_at = (
+                    submitted_at.astimezone(
+                        timezone.utc
+                    )
+                )
+
+        submission = cls(
+            relation=relation,
+            submitter=submitter,
+            questionnaire=questionnaire,
+            period=period,
+            submitted_at=submitted_at,
+            status=status,
+            organization_size=organization_size,
+        )
+
+        submission.submission_id = (
+            normalized_submission_id
+        )
+
+        submission.created_at = (
+            created_at
+        )
+
+        submission.updated_at = (
+            updated_at
+        )
+
+        return submission
 
 
 

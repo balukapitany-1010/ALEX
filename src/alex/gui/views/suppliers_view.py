@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
+from alex.esg.services.supplier_registration_service import SupplierRegistrationService
 from alex.esg.domain.supplier import Supplier
 from alex.esg.services.supplier_service import SupplierService
 from alex.gui.dialogs.supplier_dialog import SupplierDialog
@@ -26,23 +26,30 @@ class SuppliersView(QWidget):
             supplier_service: SupplierService,
             company_service: CompanyService,
             relation_service: SupplyChainRelationService,
+            supplier_registration_service: SupplierRegistrationService,
             read_only: bool = False,
+            allow_relation_creation: bool = False,
     ) -> None:
         super().__init__()
 
         self._supplier_service = supplier_service
         self._company_service = company_service
         self._relation_service = relation_service
+        self._supplier_registration_service = (supplier_registration_service)
         self._read_only = read_only
+        self._allow_relation_creation = (allow_relation_creation)
 
         self._search_input = QLineEdit()
         self._open_button = QPushButton("Megnyitás")
+        self._edit_button = QPushButton("Szerkesztés")
         self._add_button = QPushButton("+ Új beszállító")
         self._add_relation_button = QPushButton(
             "+ Beszállítói kapcsolat"
         )
 
         self._table = QTableWidget()
+        self._open_button.setEnabled(False)
+        self._edit_button.setEnabled(False)
         self._relations_table = QTableWidget()
 
         self._open_button.setEnabled(False)
@@ -68,72 +75,33 @@ class SuppliersView(QWidget):
 
     def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
-
         title = QLabel("Beszállítók")
-
         font = title.font()
         font.setPointSize(20)
         font.setBold(True)
         title.setFont(font)
-
         main_layout.addWidget(title)
-
         toolbar_layout = QHBoxLayout()
-
-        toolbar_layout.addWidget(
-            self._add_relation_button
-        )
-
-        self._search_input.setPlaceholderText(
-            "Keresés cégnév vagy adószám alapján..."
-        )
-
-        toolbar_layout.addWidget(
-            self._search_input
-        )
-
-        toolbar_layout.addWidget(
-            self._open_button
-        )
-
-        toolbar_layout.addWidget(
-            self._add_button
-        )
-
-        main_layout.addLayout(
-            toolbar_layout
-        )
-
+        toolbar_layout.addWidget(self._add_relation_button)
+        self._search_input.setPlaceholderText("Keresés cégnév vagy adószám alapján...")
+        toolbar_layout.addWidget(self._search_input)
+        toolbar_layout.addWidget(self._open_button)
+        toolbar_layout.addWidget( self._edit_button)
+        toolbar_layout.addWidget(self._add_button)
+        main_layout.addLayout(toolbar_layout)
         self._setup_table()
-
-        main_layout.addWidget(
-            self._table
-        )
-        relations_title = QLabel(
-            "Beszállítói kapcsolatok"
-        )
-
+        main_layout.addWidget(self._table)
+        relations_title = QLabel("Beszállítói kapcsolatok")
         relations_font = relations_title.font()
         relations_font.setPointSize(14)
         relations_font.setBold(True)
-
-        relations_title.setFont(
-            relations_font
-        )
-
-        main_layout.addWidget(
-            relations_title
-        )
-
+        relations_title.setFont(relations_font)
+        main_layout.addWidget(relations_title)
         self._setup_relations_table()
-
-        main_layout.addWidget(
-            self._relations_table
-        )
+        main_layout.addWidget(self._relations_table)
 
     def _setup_table(self) -> None:
         self._table.setColumnCount(3)
-
         self._table.setHorizontalHeaderLabels(
             [
                 "Beszállító neve",
@@ -141,65 +109,25 @@ class SuppliersView(QWidget):
                 "Ország",
             ]
         )
-
         header = self._table.horizontalHeader()
-
-        header.setSectionResizeMode(
-            0,
-            QHeaderView.ResizeMode.Stretch,
-        )
-
-        header.setSectionResizeMode(
-            1,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-
-        header.setSectionResizeMode(
-            2,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-
-        self._table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
-        )
-
-        self._table.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers
-        )
+        header.setSectionResizeMode(0,QHeaderView.ResizeMode.Stretch,)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents,)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents,)
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
     def _connect_signals(self) -> None:
-        self._search_input.textChanged.connect(
-            self._filter_suppliers
-        )
-
-        self._add_button.clicked.connect(
-            self._open_add_supplier_dialog
-        )
-
-        self._open_button.clicked.connect(
-            self._open_selected_supplier
-        )
-
-        self._table.itemSelectionChanged.connect(
-            self._update_button_state
-        )
-
-        self._table.cellDoubleClicked.connect(
-            self._open_supplier_from_double_click
-        )
-        self._add_relation_button.clicked.connect(
-            self._open_add_relation_dialog
-        )
+        self._search_input.textChanged.connect(self._filter_suppliers)
+        self._add_button.clicked.connect(self._open_add_supplier_dialog)
+        self._open_button.clicked.connect(self._open_selected_supplier)
+        self._table.itemSelectionChanged.connect(self._update_button_state)
+        self._table.cellDoubleClicked.connect(self._open_supplier_from_double_click)
+        self._add_relation_button.clicked.connect(self._open_add_relation_dialog)
+        self._edit_button.clicked.connect(self._edit_selected_supplier)
 
     def _open_add_relation_dialog(self) -> None:
-        companies = (
-            self._company_service.list_companies()
-        )
-
-        suppliers = (
-            self._supplier_service.list_suppliers()
-        )
-
+        companies = (self._company_service.list_companies())
+        suppliers = (self._supplier_service.list_suppliers())
         dialog = SupplyChainRelationDialog(
             companies=companies,
             suppliers=suppliers,
@@ -223,60 +151,56 @@ class SuppliersView(QWidget):
                 str(error),
             )
             return
-
         self._refresh_relations_table()
 
     def _refresh_relations_table(self) -> None:
         self._relations_table.setRowCount(0)
 
-        for relation in (
-                self._relation_service.list_relations()
+        for relation in (self._relation_service.list_relations()
         ):
             row = self._relations_table.rowCount()
-
             self._relations_table.insertRow(row)
-
             self._relations_table.setItem(
                 row,
                 0,
-                QTableWidgetItem(
-                    relation.requester.name
-                ),
+                QTableWidgetItem(relation.requester.name),
             )
-
             self._relations_table.setItem(
                 row,
                 1,
-                QTableWidgetItem(
-                    relation.supplier.name
-                ),
+                QTableWidgetItem(relation.supplier.name),
             )
-
             self._relations_table.setItem(
                 row,
                 2,
                 QTableWidgetItem(
-                    relation.created_at.strftime(
-                        "%Y-%m-%d %H:%M"
-                    )
+                    relation.created_at.strftime("%Y-%m-%d %H:%M")
                 ),
             )
 
-    def _open_add_supplier_dialog(self) -> None:
-        dialog = SupplierDialog(self)
+    def _open_add_supplier_dialog(
+            self,
+    ) -> None:
+        supplier_dialog = SupplierDialog(self)
+        result = supplier_dialog.exec()
 
-        result = dialog.exec()
-
-        if result != QDialog.DialogCode.Accepted:
+        if (
+                result
+                != QDialog.DialogCode.Accepted
+        ):
             return
 
         try:
-            self._supplier_service.create_supplier(
-                name=dialog.company_name,
-                tax_number=dialog.tax_number,
-                country=dialog.country,
+            temporary_supplier = Supplier(
+                name=(supplier_dialog.company_name),
+                tax_number=(supplier_dialog.tax_number),
+                country=(supplier_dialog.country),
             )
-        except (TypeError, ValueError) as error:
+
+        except (
+                TypeError,
+                ValueError,
+        ) as error:
             QMessageBox.critical(
                 self,
                 "Hibás beszállítói adat",
@@ -284,7 +208,60 @@ class SuppliersView(QWidget):
             )
             return
 
+        companies = (self._company_service.list_companies())
+        if not companies:
+            QMessageBox.warning(
+                self,
+                "Nincs kötelezett",
+                (
+                    "A beszállító "
+                    "létrehozásához előbb "
+                    "legalább egy cégre "
+                    "szükség van."
+                ),
+            )
+            return
+        relation_dialog = (SupplyChainRelationDialog(companies=companies,suppliers=(temporary_supplier,),parent=self,))
+        result = relation_dialog.exec()
+        if (
+                result != QDialog.DialogCode.Accepted):
+            return
+
+        try:
+            relation = (self._supplier_registration_service.register_supplier(
+                    requester=(relation_dialog.requester),
+                    name=( temporary_supplier.name),
+                    tax_number=(temporary_supplier.tax_number),
+                    country=(temporary_supplier.country),
+                )
+            )
+
+        except (
+                TypeError,
+                ValueError,
+                RuntimeError,
+        ) as error:
+            QMessageBox.critical(
+                self,
+                "Beszállító létrehozási hiba",
+                str(error),
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Beszállító létrehozva",
+            (
+                f"Beszállító: "
+                f"{relation.supplier.name}\n"
+                f"Kötelezett: "
+                f"{relation.requester.name}\n"
+                f"Kapcsolat ID: "
+                f"{relation.relation_id}"
+            ),
+        )
         self._refresh_table()
+        self._refresh_relations_table()
 
     def _get_selected_supplier(
         self,
@@ -292,33 +269,23 @@ class SuppliersView(QWidget):
         selected_rows = (
             self._table.selectionModel().selectedRows()
         )
-
         if not selected_rows:
             return None
 
         row = selected_rows[0].row()
-
         tax_number_item = self._table.item(
             row,
             1,
         )
-
         if tax_number_item is None:
             return None
-
-        return self._supplier_service.get_by_tax_number(
-            tax_number_item.text()
-        )
+        return self._supplier_service.get_by_tax_number(tax_number_item.text())
 
     def _open_selected_supplier(self) -> None:
         supplier = self._get_selected_supplier()
-
         if supplier is None:
             return
-
-        self._show_supplier_details(
-            supplier
-        )
+        self._show_supplier_details(supplier)
 
     def _open_supplier_from_double_click(
         self,
@@ -329,22 +296,13 @@ class SuppliersView(QWidget):
             row,
             1,
         )
-
         if tax_number_item is None:
             return
-
         supplier = (
-            self._supplier_service.get_by_tax_number(
-                tax_number_item.text()
-            )
-        )
-
+            self._supplier_service.get_by_tax_number(tax_number_item.text()))
         if supplier is None:
             return
-
-        self._show_supplier_details(
-            supplier
-        )
+        self._show_supplier_details(supplier)
 
     def _show_supplier_details(
         self,
@@ -361,14 +319,67 @@ class SuppliersView(QWidget):
             ),
         )
 
-    def _update_button_state(self) -> None:
-        has_selection = bool(
-            self._table.selectionModel().selectedRows()
+    def _edit_selected_supplier(
+            self,
+    ) -> None:
+        supplier = (self._get_selected_supplier())
+
+        if supplier is None:
+            return
+
+        dialog = SupplierDialog(
+            parent=self,
+            supplier=supplier,
         )
 
-        self._open_button.setEnabled(
-            has_selection
+        result = dialog.exec()
+        if (
+                result
+                != QDialog.DialogCode.Accepted
+        ):
+            return
+
+        try:
+            updated_supplier = (self._supplier_service.update_supplier(
+                    supplier=supplier,
+                    name=dialog.company_name,
+                    country=dialog.country,
+                )
+            )
+
+        except (
+                TypeError,
+                ValueError,
+                RuntimeError,
+        ) as error:
+            QMessageBox.critical(
+                self,
+                "Beszállító szerkesztési hiba",
+                str(error),
+            )
+            return
+
+        QMessageBox.information(self,
+            "Beszállító módosítva",
+            (
+                f"Név: "
+                f"{updated_supplier.name}\n"
+                f"Adószám: "
+                f"{updated_supplier.tax_number}\n"
+                f"Ország: "
+                f"{updated_supplier.country or '-'}"
+            ),
         )
+
+        self._refresh_table()
+        self._refresh_relations_table()
+
+    def _update_button_state(
+            self,
+    ) -> None:
+        has_selection = bool(self._table.selectionModel().selectedRows())
+        self._open_button.setEnabled(has_selection)
+        self._edit_button.setEnabled(has_selection and not self._read_only)
 
     def refresh(self) -> None:
         self._refresh_table()
@@ -376,38 +387,28 @@ class SuppliersView(QWidget):
 
     def _refresh_table(self) -> None:
         self._table.setRowCount(0)
-
         for supplier in (
                 self._supplier_service.list_suppliers()
         ):
-            self._add_supplier_to_table(
-                supplier
-            )
-
-        self._filter_suppliers(
-            self._search_input.text()
-        )
+            self._add_supplier_to_table( supplier)
+        self._filter_suppliers(self._search_input.text())
 
     def _add_supplier_to_table(
         self,
         supplier: Supplier,
     ) -> None:
         row = self._table.rowCount()
-
         self._table.insertRow(row)
-
         self._table.setItem(
             row,
             0,
             QTableWidgetItem(supplier.name),
         )
-
         self._table.setItem(
             row,
             1,
             QTableWidgetItem(supplier.tax_number),
         )
-
         self._table.setItem(
             row,
             2,
@@ -419,7 +420,6 @@ class SuppliersView(QWidget):
         text: str,
     ) -> None:
         search_text = text.strip().lower()
-
         for row in range(
             self._table.rowCount()
         ):
@@ -445,11 +445,7 @@ class SuppliersView(QWidget):
                 else ""
             )
 
-            matches = (
-                search_text in name
-                or search_text in tax_number
-            )
-
+            matches = (search_text in name or search_text in tax_number)
             self._table.setRowHidden(
                 row,
                 not matches,
@@ -457,7 +453,6 @@ class SuppliersView(QWidget):
 
     def _setup_relations_table(self) -> None:
         self._relations_table.setColumnCount(3)
-
         self._relations_table.setHorizontalHeaderLabels(
             [
                 "Cég / kötelezett",
@@ -465,28 +460,9 @@ class SuppliersView(QWidget):
                 "Létrehozva",
             ]
         )
-
         header = self._relations_table.horizontalHeader()
-
-        header.setSectionResizeMode(
-            0,
-            QHeaderView.ResizeMode.Stretch,
-        )
-
-        header.setSectionResizeMode(
-            1,
-            QHeaderView.ResizeMode.Stretch,
-        )
-
-        header.setSectionResizeMode(
-            2,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-
-        self._relations_table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
-        )
-
-        self._relations_table.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers
-        )
+        header.setSectionResizeMode(0,QHeaderView.ResizeMode.Stretch,)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch,)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self._relations_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._relations_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

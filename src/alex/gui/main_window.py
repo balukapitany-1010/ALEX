@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from alex.esg.repositories.mssql_supplier_registration_repository import MssqlSupplierRegistrationRepository
+from alex.esg.services.supplier_registration_service import SupplierRegistrationService
 from alex.esg.repositories.mssql_supplier_repository import MssqlSupplierRepository
 from alex.esg.repositories.mssql_supply_chain_relation_repository import MssqlSupplyChainRelationRepository
 from alex.esg.repositories.mssql_company_repository import MssqlCompanyRepository
@@ -59,6 +61,8 @@ class MainWindow(QMainWindow):
         self._supplier_service = (SupplierService())
         self._relation_service = (SupplyChainRelationService())
         supplier_repository = (MssqlSupplierRepository(db_connection_factory))
+        supplier_registration_repository = (MssqlSupplierRegistrationRepository(db_connection_factory))
+        self._supplier_registration_service = ( SupplierRegistrationService(repository=(supplier_registration_repository)))
         relation_repository = (MssqlSupplyChainRelationRepository(db_connection_factory))
         self._supplier_db_service = (SupplierService(repository=supplier_repository))
         self._relation_db_service = (SupplyChainRelationService(repository=relation_repository))
@@ -187,9 +191,12 @@ class MainWindow(QMainWindow):
             relation_service=(
                 self._relation_db_service
             ),
-            read_only=True,
+            supplier_registration_service=(
+                self._supplier_registration_service
+            ),
+            read_only=False,
+            allow_relation_creation=True,
         )
-
         self._content.addWidget(self._suppliers_view)
 
         self._submissions_view = SubmissionsView(

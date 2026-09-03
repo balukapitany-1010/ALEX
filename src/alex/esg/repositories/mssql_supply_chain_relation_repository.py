@@ -1,14 +1,8 @@
 from alex.esg.domain.company import Company
 from alex.esg.domain.supplier import Supplier
-from alex.esg.domain.supply_chain_relation import (
-    SupplyChainRelation,
-)
-from alex.esg.repositories.supply_chain_relation_repository import (
-    SupplyChainRelationRepository,
-)
-from alex.infrastructure.database.sql_server_connection_factory import (
-    SqlServerConnectionFactory,
-)
+from alex.esg.domain.supply_chain_relation import SupplyChainRelation
+from alex.esg.repositories.supply_chain_relation_repository import SupplyChainRelationRepository
+from alex.infrastructure.database.sql_server_connection_factory import SqlServerConnectionFactory
 
 
 class MssqlSupplyChainRelationRepository(
@@ -32,22 +26,133 @@ class MssqlSupplyChainRelationRepository(
         )
 
     def add(
-        self,
-        relation: SupplyChainRelation,
+            self,
+            relation: SupplyChainRelation,
     ) -> SupplyChainRelation:
-        raise NotImplementedError(
-            "MSSQL relation creation is not "
-            "implemented yet"
+        if not isinstance(
+                relation,
+                SupplyChainRelation,
+        ):
+            raise TypeError(
+                "relation must be a "
+                "SupplyChainRelation"
+            )
+
+        existing = self.get_by_parties(
+            requester=relation.requester,
+            supplier=relation.supplier,
         )
 
-    def remove(
-        self,
-        relation_id: str,
-    ) -> SupplyChainRelation:
-        raise NotImplementedError(
-            "MSSQL relation removal is not "
-            "implemented yet"
+        if existing is not None:
+            raise ValueError(
+                "relation between requester "
+                "and supplier already exists"
+            )
+
+        connection = (
+            self._connection_factory.connect()
         )
+
+        try:
+            cursor = connection.cursor()
+
+            cursor.execute(
+                """
+                INSERT INTO dbo.SUPPLY_CHAIN_RELATION (
+                    requester_company_key,
+                    supplier_company_key,
+                    relation_status,
+                    created_at,
+                    updated_at
+                )
+                OUTPUT
+                    INSERTED.relation_id,
+                    INSERTED.relation_status,
+                    INSERTED.created_at,
+                    INSERTED.updated_at
+                VALUES (
+                    ?,
+                    ?,
+                    ?,
+                    SYSUTCDATETIME(),
+                    SYSUTCDATETIME()
+                )
+                """,
+                relation.requester.company_key,
+                relation.supplier.company_key,
+                relation.relation_status,
+            )
+
+            row = cursor.fetchone()
+
+            if row is None:
+                raise RuntimeError(
+                    "relation insert did not "
+                    "return a row"
+                )
+
+            connection.commit()
+
+            return SupplyChainRelation.rehydrate(
+                relation_id=row[0],
+                requester=relation.requester,
+                supplier=relation.supplier,
+                relation_status=row[1],
+                created_at=row[2],
+                updated_at=row[3],
+            )
+
+        except Exception:
+            connection.rollback()
+            raise
+
+        finally:
+            connection.close()
+
+    def remove(
+            self,
+            relation_id: str,
+    ) -> SupplyChainRelation:
+        relation = self.get_by_id(
+            relation_id
+        )
+
+        if relation is None:
+            raise ValueError(
+                "relation does not exist"
+            )
+
+        connection = (
+            self._connection_factory.connect()
+        )
+
+        try:
+            cursor = connection.cursor()
+
+            cursor.execute(
+                """
+                DELETE FROM dbo.SUPPLY_CHAIN_RELATION
+                WHERE relation_id =
+                    TRY_CONVERT(bigint, ?)
+                """,
+                relation_id,
+            )
+
+            if cursor.rowcount != 1:
+                raise RuntimeError(
+                    "relation was not deleted"
+                )
+
+            connection.commit()
+
+            return relation
+
+        except Exception:
+            connection.rollback()
+            raise
+
+        finally:
+            connection.close()
 
     def list_all(
         self,
@@ -70,18 +175,10 @@ class MssqlSupplyChainRelationRepository(
             relation_id,
             str,
         ):
-            raise TypeError(
-                "relation_id must be a string"
-            )
-
-        normalized = (
-            relation_id.strip()
-        )
-
+            raise TypeError("relation_id must be a string")
+        normalized = (relation_id.strip())
         if not normalized:
-            raise ValueError(
-                "relation_id cannot be empty"
-            )
+            raise ValueError("relation_id cannot be empty")
 
         relations = self._fetch_relations(
             """
@@ -94,10 +191,8 @@ class MssqlSupplyChainRelationRepository(
             """,
             normalized,
         )
-
         if not relations:
             return None
-
         return relations[0]
 
     def get_by_parties(
@@ -110,17 +205,13 @@ class MssqlSupplyChainRelationRepository(
             requester,
             Company,
         ):
-            raise TypeError(
-                "requester must be a Company"
-            )
+            raise TypeError("requester must be a Company")
 
         if not isinstance(
             supplier,
             Supplier,
         ):
-            raise TypeError(
-                "supplier must be a Supplier"
-            )
+            raise TypeError("supplier must be a Supplier")
 
         relations = self._fetch_relations(
             """
@@ -135,10 +226,8 @@ class MssqlSupplyChainRelationRepository(
             requester.company_key,
             supplier.company_key,
         )
-
         if not relations:
             return None
-
         return relations[0]
 
     def list_for_requester(
@@ -152,10 +241,7 @@ class MssqlSupplyChainRelationRepository(
             requester,
             Company,
         ):
-            raise TypeError(
-                "requester must be a Company"
-            )
-
+            raise TypeError("requester must be a Company")
         return self._fetch_relations(
             """
             WHERE
@@ -178,10 +264,7 @@ class MssqlSupplyChainRelationRepository(
             supplier,
             Supplier,
         ):
-            raise TypeError(
-                "supplier must be a Supplier"
-            )
-
+            raise TypeError("supplier must be a Supplier")
         return self._fetch_relations(
             """
             WHERE
@@ -201,30 +284,16 @@ class MssqlSupplyChainRelationRepository(
         SupplyChainRelation,
         ...
     ]:
-        connection = (
-            self._connection_factory.connect()
-        )
-
+        connection = (self._connection_factory.connect())
         try:
             cursor = connection.cursor()
-
-            sql = (
-                self._base_select_sql()
-                + where_and_order_sql
-            )
-
+            sql = (self._base_select_sql() + where_and_order_sql)
             cursor.execute(
                 sql,
                 *parameters,
             )
-
             rows = cursor.fetchall()
-
-            return tuple(
-                self._map_row(row)
-                for row in rows
-            )
-
+            return tuple(self._map_row(row) for row in rows)
         finally:
             connection.close()
 

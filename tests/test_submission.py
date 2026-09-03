@@ -780,3 +780,61 @@ def test_submission_rejects_invalid_submitter():
             questionnaire=questionnaire,
             period="2026-Q1",
         )
+def test_submission_can_be_rehydrated():
+    requester = Company(
+        name="Requester Kft.",
+        tax_number="11111111-2-41",
+        country="HU",
+    )
+    supplier = Supplier(
+        name="Supplier Kft.",
+        tax_number="22222222-2-41",
+        country="HU",
+    )
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH-ESG",
+        spec_version="2.1",
+        locale="HU",
+    )
+    created_at = datetime(
+        2026,
+        8,
+        1,
+        10,
+        0,
+    )
+    updated_at = datetime(
+        2026,
+        8,
+        2,
+        11,
+        0,
+    )
+    submission = Submission.rehydrate(
+        submission_id=347,
+        relation=relation,
+        submitter=None,
+        questionnaire=questionnaire,
+        period="2026-Q2",
+        submitted_at=datetime(
+            2026,
+            8,
+            1,
+            9,
+            30,
+        ),
+        status=SubmissionStatus.SUBMITTED,
+        organization_size="large",
+        created_at=created_at,
+        updated_at=updated_at,
+    )
+
+    assert (submission.submission_id == "347")
+    assert (submission.period == "2026-Q2")
+    assert (submission.organization_size == "large")
+    assert (submission.created_at.tzinfo is not None)
+    assert (submission.updated_at.tzinfo is not None)

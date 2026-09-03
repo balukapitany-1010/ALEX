@@ -53,15 +53,32 @@ class Company:
     def tax_number(self) -> str:
         return self._tax_number
 
-    def rename(self, new_name: str) -> None:
+    def rename(
+            self,
+            new_name: str,
+    ) -> None:
+        if not isinstance(
+                new_name,
+                str,
+        ):
+            raise TypeError(
+                "new_name must be a string"
+            )
+
         new_name = new_name.strip()
 
         if not new_name:
-            raise ValueError("A cégnév megadása kötelező")
+            raise ValueError(
+                "A cégnév megadása kötelező"
+            )
+
+        if self._name == new_name:
+            return
+
         self._name = new_name
-        self.updated_at = datetime.now(UTC)
-
-
+        self.updated_at = datetime.now(
+            UTC
+        )
 
     @staticmethod
     def _generate_company_key(tax_number: str) -> str:
@@ -71,16 +88,6 @@ class Company:
             raise ValueError("Az adószámból nem generálható company_key.")
 
         return f"COM_{normalized_tax_number}"
-
-    def rename(self, new_name: str) -> None:
-        new_name = new_name.strip()
-
-        if not new_name:
-            raise ValueError("A cégnév megadása kötelező")
-        self._name = new_name
-        self.updated_at = datetime.now(UTC)
-
-
 
     def change_country(self, new_country: str | None) -> None:
         if new_country is not None:
@@ -97,19 +104,49 @@ class Company:
             name: str,
             country: str | None = None,
     ) -> None:
-        if not isinstance(name, str):
-            raise TypeError("name must be a string.")
-        normalized_name = name.strip()
+        if not isinstance(
+                name,
+                str,
+        ):
+            raise TypeError(
+                "name must be a string."
+            )
+
+        normalized_name = (
+            name.strip()
+        )
+
         if not normalized_name:
-            raise ValueError("name cannot be empty.")
+            raise ValueError(
+                "name cannot be empty."
+            )
+
         if country is not None:
-            if not isinstance(country, str):
-                raise TypeError("country must be a string or None.")
-            country = country.strip() or None
+            if not isinstance(
+                    country,
+                    str,
+            ):
+                raise TypeError(
+                    "country must be a "
+                    "string or None."
+                )
+
+            country = (
+                    country.strip()
+                    or None
+            )
+
+        if (
+                self._name == normalized_name
+                and self._country == country
+        ):
+            return
 
         self._name = normalized_name
-        self._updated_at = datetime.now(timezone.utc)
         self._country = country
+        self.updated_at = datetime.now(
+            UTC
+        )
 
     @classmethod
     def rehydrate(
