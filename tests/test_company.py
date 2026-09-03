@@ -2,7 +2,7 @@ import time
 import unittest
 
 import pytest
-
+from datetime import UTC, datetime, timezone
 from src.alex.esg.domain.company import Company
 
 class TestCompany(unittest.TestCase):
@@ -212,6 +212,127 @@ class TestCompany(unittest.TestCase):
         assert company.tax_number == original_tax_number
         assert company.company_key == original_company_key
 
+    def test_company_can_be_rehydrated(self) -> None:
+        created_at = datetime(
+            2026,
+            1,
+            10,
+            12,
+            30,
+            0,
+            tzinfo=UTC,
+        )
+
+        updated_at = datetime(
+            2026,
+            2,
+            15,
+            9,
+            45,
+            0,
+            tzinfo=UTC,
+        )
+
+        company = Company.rehydrate(
+            company_key="COMPANY-123",
+            name="Teszt Kft.",
+            tax_number="12345678-2-41",
+            country="HU",
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+
+        self.assertEqual(
+            company.company_key,
+            "COMPANY-123",
+        )
+
+        self.assertEqual(
+            company.name,
+            "Teszt Kft.",
+        )
+
+        self.assertEqual(
+            company.tax_number,
+            "12345678-2-41",
+        )
+
+        self.assertEqual(
+            company.country,
+            "HU",
+        )
+
+        self.assertEqual(
+            company.created_at,
+            created_at,
+        )
+
+        self.assertEqual(
+            company.updated_at,
+            updated_at,
+        )
+
+    def test_company_rehydrate_accepts_missing_updated_at(
+            self,
+    ) -> None:
+        created_at = datetime(
+            2026,
+            1,
+            10,
+            12,
+            30,
+            0,
+            tzinfo=UTC,
+        )
+
+        company = Company.rehydrate(
+            company_key="COMPANY-123",
+            name="Teszt Kft.",
+            tax_number="12345678-2-41",
+            country="HU",
+            created_at=created_at,
+            updated_at=None,
+        )
+
+        self.assertIsNone(
+            company.updated_at
+        )
+
+    def test_company_rehydrate_rejects_empty_company_key(
+            self,
+    ) -> None:
+        with self.assertRaisesRegex(
+                ValueError,
+                "company_key cannot be empty",
+        ):
+            Company.rehydrate(
+                company_key="   ",
+                name="Teszt Kft.",
+                tax_number="12345678-2-41",
+                country="HU",
+                created_at=datetime(
+                    2026,
+                    1,
+                    10,
+                ),
+                updated_at=None,
+            )
+
+    def test_company_rehydrate_rejects_invalid_created_at(
+            self,
+    ) -> None:
+        with self.assertRaisesRegex(
+                TypeError,
+                "created_at must be a datetime",
+        ):
+            Company.rehydrate(
+                company_key="COMPANY-123",
+                name="Teszt Kft.",
+                tax_number="12345678-2-41",
+                country="HU",
+                created_at="2026-01-10",
+                updated_at=None,
+            )
 
 
 

@@ -26,12 +26,14 @@ class SuppliersView(QWidget):
             supplier_service: SupplierService,
             company_service: CompanyService,
             relation_service: SupplyChainRelationService,
+            read_only: bool = False,
     ) -> None:
         super().__init__()
 
         self._supplier_service = supplier_service
         self._company_service = company_service
         self._relation_service = relation_service
+        self._read_only = read_only
 
         self._search_input = QLineEdit()
         self._open_button = QPushButton("Megnyitás")
@@ -44,6 +46,19 @@ class SuppliersView(QWidget):
         self._relations_table = QTableWidget()
 
         self._open_button.setEnabled(False)
+        if self._read_only:
+            self._add_button.setEnabled(False)
+            self._add_relation_button.setEnabled(False)
+
+            self._add_button.setToolTip(
+                "Az MSSQL beszállító létrehozás "
+                "még nincs engedélyezve."
+            )
+
+            self._add_relation_button.setToolTip(
+                "Az MSSQL kapcsolat létrehozás "
+                "még nincs engedélyezve."
+            )
 
         self._setup_ui()
         self._connect_signals()

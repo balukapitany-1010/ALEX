@@ -110,3 +110,84 @@ class Company:
         self._name = normalized_name
         self._updated_at = datetime.now(timezone.utc)
         self._country = country
+
+    @classmethod
+    def rehydrate(
+            cls,
+            *,
+            company_key: str,
+            name: str,
+            tax_number: str,
+            country: str | None,
+            created_at: datetime,
+            updated_at: datetime | None,
+    ) -> "Company":
+        if not isinstance(
+                company_key,
+                str,
+        ):
+            raise TypeError(
+                "company_key must be a string"
+            )
+
+        company_key = company_key.strip()
+
+        if not company_key:
+            raise ValueError(
+                "company_key cannot be empty"
+            )
+
+        if not isinstance(
+                created_at,
+                datetime,
+        ):
+            raise TypeError(
+                "created_at must be a datetime"
+            )
+
+        if (
+                updated_at is not None
+                and not isinstance(
+            updated_at,
+            datetime,
+        )
+        ):
+            raise TypeError(
+                "updated_at must be a datetime or None"
+            )
+
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(
+                tzinfo=UTC
+            )
+        else:
+            created_at = created_at.astimezone(
+                UTC
+            )
+
+        if updated_at is not None:
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(
+                    tzinfo=UTC
+                )
+            else:
+                updated_at = updated_at.astimezone(
+                    UTC
+                )
+
+            if updated_at < created_at:
+                raise ValueError(
+                    "updated_at cannot be before created_at"
+                )
+
+        company = cls(
+            name=name,
+            tax_number=tax_number,
+            country=country,
+        )
+
+        company._company_key = company_key
+        company.created_at = created_at
+        company.updated_at = updated_at
+
+        return company
