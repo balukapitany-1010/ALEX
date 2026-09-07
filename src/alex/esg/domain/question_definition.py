@@ -187,3 +187,132 @@ class QuestionDefinition:
             self,
     ) -> tuple[str, ...]:
         return self._allowed_value_ids
+
+    @classmethod
+    def rehydrate_from_storage(
+            cls,
+            *,
+            question: Question,
+            questionnaire: Questionnaire,
+            title: str,
+            category: QuestionCategory,
+            topic: str,
+            question_type: QuestionType,
+            subtopic: str | None = None,
+            requirement: str | None = None,
+            options: list[Option] | None = None,
+            allowed_value_ids: list[str] | None = None,
+    ) -> "QuestionDefinition":
+        if not isinstance(
+                question,
+                Question,
+        ):
+            raise TypeError("question must be a Question")
+
+        if not isinstance(
+                questionnaire,
+                Questionnaire,
+        ):
+            raise TypeError("questionnaire must be a Questionnaire")
+
+        if not isinstance(
+                title,
+                str,
+        ):
+            raise TypeError("title must be a string")
+
+        title = title.strip()
+
+        if not title:
+            raise ValueError("title cannot be empty")
+
+        if not isinstance(
+                category,
+                QuestionCategory,
+        ):
+            raise TypeError("category must be a QuestionCategory")
+
+        if not isinstance(
+                topic,
+                str,
+        ):
+            raise TypeError("topic must be a string")
+
+        topic = topic.strip()
+
+        if not topic:
+            raise ValueError("topic cannot be empty")
+
+        if not isinstance(
+                question_type,
+                QuestionType,
+        ):
+            raise TypeError("question_type must be a QuestionType")
+
+        if subtopic is not None:
+            if not isinstance(
+                    subtopic,
+                    str,
+            ):
+                raise TypeError("subtopic must be a string or None")
+
+            subtopic = (
+                    subtopic.strip()
+                    or None
+            )
+
+        if requirement is not None:
+            if not isinstance(
+                    requirement,
+                    str,
+            ):
+                raise TypeError(
+                    "requirement must be "
+                    "a string or None"
+                )
+
+            requirement = (
+                    requirement.strip()
+                    or None
+            )
+
+        normalized_options = list(
+            options or []
+        )
+
+        if not all(
+                isinstance(option, Option)
+                for option in normalized_options
+        ):
+            raise TypeError(
+                "options must contain only "
+                "Option objects"
+            )
+
+        definition = cls.__new__(cls)
+
+        definition.question = question
+        definition.questionnaire = questionnaire
+        definition.title = title
+        definition.category = category
+        definition.topic = topic
+        definition.subtopic = subtopic
+        definition.question_type = (question_type)
+        definition.requirement = requirement
+        definition.options = normalized_options
+
+        definition.subject = None
+        definition.organization = None
+        definition.organization_sizes = []
+        definition.geographical_relevance = []
+
+        definition._allowed_value_ids = (
+            cls._normalize_allowed_value_ids(
+                allowed_value_ids=(
+                    allowed_value_ids
+                ),
+                options=normalized_options,
+            )
+        )
+
+        return definition

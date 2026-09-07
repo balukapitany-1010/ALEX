@@ -838,3 +838,82 @@ def test_submission_can_be_rehydrated():
     assert (submission.organization_size == "large")
     assert (submission.created_at.tzinfo is not None)
     assert (submission.updated_at.tzinfo is not None)
+
+    def test_submission_allows_missing_period():
+        requester = Company(
+            name="Requester Kft.",
+            tax_number="11111111-2-41",
+        )
+
+        supplier = Supplier(
+            name="Supplier Kft.",
+            tax_number="22222222-2-41",
+        )
+
+        relation = SupplyChainRelation(
+            requester=requester,
+            supplier=supplier,
+        )
+
+        questionnaire = Questionnaire(
+            questionnaire_code="SZTFH",
+            spec_version="2.0",
+            locale="HU",
+        )
+
+        submission = Submission(
+            relation=relation,
+            submitter=None,
+            questionnaire=questionnaire,
+            period=None,
+        )
+
+        assert submission.period is None
+
+def test_submission_rehydrate_normalizes_empty_organization_size_to_none():
+    requester = Company(
+        name="Requester Kft.",
+        tax_number="11111111-2-41",
+    )
+
+    supplier = Supplier(
+        name="Supplier Kft.",
+        tax_number="22222222-2-41",
+    )
+
+    relation = SupplyChainRelation(
+        requester=requester,
+        supplier=supplier,
+    )
+
+    questionnaire = Questionnaire(
+        questionnaire_code="SZTFH",
+        spec_version="2.1",
+        locale="HU",
+    )
+
+    submission = Submission.rehydrate(
+        submission_id=1225,
+        relation=relation,
+        submitter=None,
+        questionnaire=questionnaire,
+        period="2026-Q2",
+        submitted_at=None,
+        status=(
+            SubmissionStatus.IMPORTED_HEADER
+        ),
+        organization_size="",
+        created_at=datetime(
+            2026,
+            8,
+            6,
+            15,
+            17,
+        ),
+        updated_at=None,
+    )
+
+    assert (
+        submission.organization_size
+        is None
+    )

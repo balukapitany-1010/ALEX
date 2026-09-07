@@ -12,18 +12,26 @@ if TYPE_CHECKING:
     from alex.esg.domain.attachment import Attachment
 
 class Submission:
-    def __init__(self, relation: SupplyChainRelation, submitter: Company | None, questionnaire: Questionnaire, period: str,submitted_at: datetime | None = None, status: SubmissionStatus = SubmissionStatus.SUBMITTED, organization_size:str | None = None):
+    def __init__(self, relation: SupplyChainRelation, submitter: Company | None, questionnaire: Questionnaire, period: str | None,submitted_at: datetime | None = None, status: SubmissionStatus = SubmissionStatus.SUBMITTED, organization_size:str | None = None):
 
 
 
         if not isinstance(relation, SupplyChainRelation):
             raise TypeError("relation must be supplychain relation")
 
-        if not isinstance(period, str):
-            raise TypeError("period must be a string")
+        if (
+                period is not None and not isinstance(
+            period,
+            str,
+        )
+        ):
+            raise TypeError("period must be a string or None")
 
-        if not period.strip():
-            raise ValueError("period must not be empty")
+        if period is not None:
+            period = period.strip()
+
+            if not period:
+                raise ValueError("period must not be empty")
 
         if (
                 submitter is not None
@@ -62,7 +70,12 @@ class Submission:
         self._attachments: list[Attachment] = []
         self.organization_size = organization_size
 
-    def add_answer(self, answer: "Answer") -> None:
+    def add_answer(
+            self,
+            answer: "Answer",
+            *,
+            touch_updated_at: bool = True,
+    ) -> None:
         from alex.esg.domain.answer import Answer
         if not isinstance(answer, Answer):
             raise  TypeError("answer must be a Answer")
@@ -84,10 +97,10 @@ class Submission:
             if existing_question_id == question_id:
                 raise ValueError("an Answer for this Qustion alredy exists in the Submission")
 
-
-
         self._answers.append(answer)
-        self.updated_at = datetime.now(timezone.utc)
+
+        if touch_updated_at:
+            self.updated_at = datetime.now(timezone.utc)
 
     def remove_attachment(
             self,
@@ -248,7 +261,7 @@ class Submission:
             relation: SupplyChainRelation,
             submitter: Company | None,
             questionnaire: Questionnaire,
-            period: str,
+            period: str | None,
             submitted_at: datetime | None,
             status: SubmissionStatus,
             organization_size: str | None,
@@ -344,6 +357,20 @@ class Submission:
                         timezone.utc
                     )
                 )
+        if organization_size is not None:
+            if not isinstance(
+                    organization_size,
+                    str,
+            ):
+                raise TypeError(
+                    "organization_size must be "
+                    "a string or None"
+                )
+
+            organization_size = (
+                    organization_size.strip()
+                    or None
+            )
 
         submission = cls(
             relation=relation,

@@ -7,6 +7,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from alex.esg.repositories.mssql_questionnaire_repository import MssqlQuestionnaireRepository
+from alex.esg.services.question_definition_read_service import QuestionDefinitionReadService
+from alex.esg.repositories.mssql_question_definition_repository import MssqlQuestionDefinitionRepository
+from alex.esg.repositories.mssql_submission_answer_loader import MssqlSubmissionAnswerLoader
+from alex.esg.services.submission_answer_read_service import SubmissionAnswerReadService
+from alex.esg.repositories.mssql_submission_repository import MssqlSubmissionRepository
 from alex.esg.repositories.mssql_supplier_registration_repository import MssqlSupplierRegistrationRepository
 from alex.esg.services.supplier_registration_service import SupplierRegistrationService
 from alex.esg.repositories.mssql_supplier_repository import MssqlSupplierRepository
@@ -67,8 +73,22 @@ class MainWindow(QMainWindow):
         self._supplier_db_service = (SupplierService(repository=supplier_repository))
         self._relation_db_service = (SupplyChainRelationService(repository=relation_repository))
         self._submission_service = (SubmissionService())
+        submission_repository = (MssqlSubmissionRepository(db_connection_factory))
+        self._submission_db_service = (SubmissionService(repository=submission_repository))
         self._questionnaire_service = (QuestionnaireService())
         self._question_definition_service = (QuestionDefinitionService())
+        question_definition_db_repository = (MssqlQuestionDefinitionRepository(db_connection_factory))
+        questionnaire_db_repository = (MssqlQuestionnaireRepository(db_connection_factory))
+        self._questionnaire_db_service = (QuestionnaireService(repository=(questionnaire_db_repository)))
+
+        self._question_definition_db_read_service = (QuestionDefinitionReadService(repository=(question_definition_db_repository)))
+        submission_answer_loader = (MssqlSubmissionAnswerLoader(connection_factory=(db_connection_factory
+                ),
+                question_definition_repository=(question_definition_db_repository
+                ),
+            )
+        )
+        self._submission_answer_read_service = (SubmissionAnswerReadService(loader=submission_answer_loader))
 
         self._setup_import_services()
 
@@ -200,19 +220,42 @@ class MainWindow(QMainWindow):
         self._content.addWidget(self._suppliers_view)
 
         self._submissions_view = SubmissionsView(
-            submission_service=(self._submission_service),
-            relation_service=(self._relation_service),
-            questionnaire_service=(self._questionnaire_service),
-            file_import_service=(self._submission_file_import_service),
-            preview_service=(self._submission_import_preview_service),
+            submission_service=(
+                self._submission_db_service
+            ),
+            relation_service=(
+                self._relation_service
+            ),
+            questionnaire_service=(
+                self._questionnaire_service
+            ),
+            file_import_service=(
+                self._submission_file_import_service
+            ),
+            preview_service=(
+                self._submission_import_preview_service
+            ),
+            answer_read_service=(
+                self._submission_answer_read_service
+            ),
+            read_only=True,
         )
-
         self._content.addWidget(self._submissions_view)
 
         self._questionnaires_view = QuestionnairesView(
-            questionnaire_service=(self._questionnaire_service),
-            question_definition_service=(self._question_definition_service),
-            definition_file_import_service=(self._questionnaire_definition_file_import_service),
+            questionnaire_service=(
+                self._questionnaire_db_service
+            ),
+            question_definition_service=(
+                self._question_definition_service
+            ),
+            definition_file_import_service=(
+                self._questionnaire_definition_file_import_service
+            ),
+            question_definition_read_service=(
+                self._question_definition_db_read_service
+            ),
+            read_only=True,
         )
 
         self._content.addWidget(self._questionnaires_view)

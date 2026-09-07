@@ -11,52 +11,44 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
+from alex.esg.services.submission_answer_read_service import SubmissionAnswerReadService
 from alex.esg.domain.submission import Submission
-from alex.esg.services.questionnaire_service import (
-    QuestionnaireService,
-)
-from alex.esg.services.submission_file_import_service import (
-    SubmissionFileImportService,
-)
-from alex.esg.services.submission_import_preview_service import (
-    SubmissionImportPreviewService,
-)
-from alex.esg.services.submission_service import (
-    SubmissionService,
-)
-from alex.esg.services.supply_chain_relation_service import (
-    SupplyChainRelationService,
-)
-from alex.esg.services.test_data_service import (
-    add_test_answers,
-)
-from alex.gui.dialogs.submission_details_dialog import (
-    SubmissionDetailsDialog,
-)
-from alex.gui.dialogs.submission_dialog import (
-    SubmissionDialog,
-)
-from alex.gui.dialogs.submission_import_dialog import (
-    SubmissionImportDialog,
-)
+from alex.esg.services.questionnaire_service import QuestionnaireService
+from alex.esg.services.submission_file_import_service import SubmissionFileImportService
+from alex.esg.services.submission_import_preview_service import SubmissionImportPreviewService
+from alex.esg.services.submission_service import SubmissionService
+from alex.esg.services.supply_chain_relation_service import SupplyChainRelationService
+from alex.esg.services.test_data_service import add_test_answers
+from alex.gui.dialogs.submission_details_dialog import SubmissionDetailsDialog
+from alex.gui.dialogs.submission_dialog import SubmissionDialog
+from alex.gui.dialogs.submission_import_dialog import SubmissionImportDialog
 
 
 class SubmissionsView(QWidget):
     def __init__(
-        self,
-        submission_service: SubmissionService,
-        relation_service: SupplyChainRelationService,
-        questionnaire_service: QuestionnaireService,
-        file_import_service: SubmissionFileImportService,
-        preview_service: SubmissionImportPreviewService,
-        parent=None,
+            self,
+            submission_service: SubmissionService,
+            relation_service: SupplyChainRelationService,
+            questionnaire_service: QuestionnaireService,
+            file_import_service: SubmissionFileImportService,
+            preview_service: SubmissionImportPreviewService,
+            answer_read_service: (SubmissionAnswerReadService | None) = None,
+            read_only: bool = False,
+            parent=None,
     ) -> None:
         super().__init__(parent)
 
+        if (
+                answer_read_service is not None and not isinstance(answer_read_service,SubmissionAnswerReadService,)
+        ):
+            raise TypeError(
+                "answer_read_service must be a "
+                "SubmissionAnswerReadService or None"
+            )
+
         if not isinstance(
-            submission_service,
-            SubmissionService,
+                submission_service,
+                SubmissionService,
         ):
             raise TypeError(
                 "submission_service must be a "
@@ -64,8 +56,8 @@ class SubmissionsView(QWidget):
             )
 
         if not isinstance(
-            relation_service,
-            SupplyChainRelationService,
+                relation_service,
+                SupplyChainRelationService,
         ):
             raise TypeError(
                 "relation_service must be a "
@@ -73,8 +65,8 @@ class SubmissionsView(QWidget):
             )
 
         if not isinstance(
-            questionnaire_service,
-            QuestionnaireService,
+                questionnaire_service,
+                QuestionnaireService,
         ):
             raise TypeError(
                 "questionnaire_service must be a "
@@ -82,8 +74,8 @@ class SubmissionsView(QWidget):
             )
 
         if not isinstance(
-            file_import_service,
-            SubmissionFileImportService,
+                file_import_service,
+                SubmissionFileImportService,
         ):
             raise TypeError(
                 "file_import_service must be a "
@@ -91,54 +83,39 @@ class SubmissionsView(QWidget):
             )
 
         if not isinstance(
-            preview_service,
-            SubmissionImportPreviewService,
+                preview_service,
+                SubmissionImportPreviewService,
         ):
             raise TypeError(
                 "preview_service must be a "
                 "SubmissionImportPreviewService"
             )
 
-        self._submission_service = (
-            submission_service
-        )
-
-        self._relation_service = (
-            relation_service
-        )
-
-        self._questionnaire_service = (
-            questionnaire_service
-        )
-
-        self._file_import_service = (
-            file_import_service
-        )
-
-        self._preview_service = (
-            preview_service
-        )
-
-        self._open_button = QPushButton(
-            "Megnyitás"
-        )
-
-        self._open_button.setEnabled(
-            False
-        )
-
-        self._add_button = QPushButton(
-            "+ Új tesztbeküldés"
-        )
-
-        self._import_button = QPushButton(
-            "JSON import"
-        )
-
+        self._submission_service = (submission_service)
+        self._relation_service = (relation_service)
+        self._questionnaire_service = (questionnaire_service)
+        self._file_import_service = (file_import_service)
+        self._preview_service = (preview_service)
+        self._read_only = read_only
+        self._open_button = QPushButton("Megnyitás")
+        self._open_button.setEnabled(False)
+        self._answer_read_service = (answer_read_service)
+        self._add_button = QPushButton("+ Új tesztbeküldés")
+        self._import_button = QPushButton("JSON import")
         self._search_input = QLineEdit()
-
         self._table = QTableWidget()
 
+        if self._read_only:
+            self._add_button.setEnabled(False)
+            self._import_button.setEnabled(False)
+            self._add_button.setToolTip(
+                "Az MSSQL beküldések létrehozása "
+                "még nincs engedélyezve."
+            )
+            self._import_button.setToolTip(
+                "Az MSSQL JSON import még nincs "
+                "bekötve erre a nézetre."
+            )
         self._setup_ui()
         self._connect_signals()
         self.refresh()
@@ -148,60 +125,33 @@ class SubmissionsView(QWidget):
             self
         )
 
-        title = QLabel(
-            "Beküldések"
-        )
-
+        title = QLabel("Beküldések")
         font = title.font()
         font.setPointSize(20)
         font.setBold(True)
 
-        title.setFont(
-            font
-        )
-
-        main_layout.addWidget(
-            title
-        )
+        title.setFont(font)
+        main_layout.addWidget(title)
 
         toolbar_layout = QHBoxLayout()
-
         self._search_input.setPlaceholderText(
             "Keresés beszállító, kötelezett "
             "vagy időszak alapján..."
         )
 
-        toolbar_layout.addWidget(
-            self._open_button
-        )
-
+        toolbar_layout.addWidget(self._open_button)
         toolbar_layout.addWidget(
             self._search_input,
             1,
         )
-
-        toolbar_layout.addWidget(
-            self._add_button
-        )
-
-        toolbar_layout.addWidget(
-            self._import_button
-        )
-
-        main_layout.addLayout(
-            toolbar_layout
-        )
-
+        toolbar_layout.addWidget(self._add_button)
+        toolbar_layout.addWidget(self._import_button)
+        main_layout.addLayout(toolbar_layout)
         self._setup_table()
-
-        main_layout.addWidget(
-            self._table
-        )
+        main_layout.addWidget(self._table)
 
     def _setup_table(self) -> None:
-        self._table.setColumnCount(
-            6
-        )
+        self._table.setColumnCount(6)
 
         self._table.setHorizontalHeaderLabels(
             [
@@ -214,9 +164,7 @@ class SubmissionsView(QWidget):
             ]
         )
 
-        header = (
-            self._table.horizontalHeader()
-        )
+        header = (self._table.horizontalHeader())
 
         header.setSectionResizeMode(
             0,
@@ -248,38 +196,16 @@ class SubmissionsView(QWidget):
             QHeaderView.ResizeMode.ResizeToContents,
         )
 
-        self._table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
-        )
-
-        self._table.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers
-        )
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
     def _connect_signals(self) -> None:
-        self._search_input.textChanged.connect(
-            self._filter_submissions
-        )
-
-        self._add_button.clicked.connect(
-            self._open_add_submission_dialog
-        )
-
-        self._import_button.clicked.connect(
-            self._import_json
-        )
-
-        self._table.itemSelectionChanged.connect(
-            self._update_button_state
-        )
-
-        self._open_button.clicked.connect(
-            self._open_selected_submission
-        )
-
-        self._table.cellDoubleClicked.connect(
-            self._open_submission_from_double_click
-        )
+        self._search_input.textChanged.connect(self._filter_submissions)
+        self._add_button.clicked.connect(self._open_add_submission_dialog)
+        self._import_button.clicked.connect(self._import_json)
+        self._table.itemSelectionChanged.connect(self._update_button_state)
+        self._open_button.clicked.connect(self._open_selected_submission)
+        self._table.cellDoubleClicked.connect(self._open_submission_from_double_click)
 
     def refresh(self) -> None:
         self._table.setRowCount(
@@ -290,35 +216,20 @@ class SubmissionsView(QWidget):
             self._submission_service
             .list_submissions()
         ):
-            self._add_submission_to_table(
-                submission
-            )
+            self._add_submission_to_table(submission)
 
-        self._filter_submissions(
-            self._search_input.text()
-        )
+        self._filter_submissions(self._search_input.text())
 
         self._update_button_state()
 
     def _update_button_state(self) -> None:
-        has_selection = bool(
-            self._table
-            .selectionModel()
-            .selectedRows()
-        )
-
-        self._open_button.setEnabled(
-            has_selection
-        )
+        has_selection = bool(self._table.selectionModel().selectedRows())
+        self._open_button.setEnabled(has_selection)
 
     def _get_selected_submission(
         self,
     ) -> Submission | None:
-        selected_rows = (
-            self._table
-            .selectionModel()
-            .selectedRows()
-        )
+        selected_rows = (self._table.selectionModel().selectedRows())
 
         if not selected_rows:
             return None
@@ -335,15 +246,10 @@ class SubmissionsView(QWidget):
         if submission_id_item is None:
             return None
 
-        return (
-            self._submission_service
-            .get_by_id(
-                submission_id_item.text()
-            )
-        )
+        return (self._submission_service.get_by_id(submission_id_item.text()))
 
     def _open_selected_submission(
-        self,
+            self,
     ) -> None:
         submission = (
             self._get_selected_submission()
@@ -351,6 +257,27 @@ class SubmissionsView(QWidget):
 
         if submission is None:
             return
+
+        if (
+                self._answer_read_service
+                is not None
+        ):
+            try:
+                submission = (
+                    self
+                    ._answer_read_service
+                    .load_answers(
+                        submission
+                    )
+                )
+
+            except Exception as error:
+                QMessageBox.critical(
+                    self,
+                    "Válaszok betöltési hiba",
+                    str(error),
+                )
+                return
 
         dialog = SubmissionDetailsDialog(
             submission=submission,
@@ -364,24 +291,16 @@ class SubmissionsView(QWidget):
         row: int,
         column: int,
     ) -> None:
-        self._table.selectRow(
-            row
-        )
-
+        self._table.selectRow(row)
         self._open_selected_submission()
 
     def _open_add_submission_dialog(
-        self,
+            self,
     ) -> None:
-        relations = (
-            self._relation_service
-            .list_relations()
-        )
-
-        questionnaires = (
-            self._questionnaire_service
-            .list_questionnaires()
-        )
+        if self._read_only:
+            return
+        relations = (self._relation_service.list_relations())
+        questionnaires = (self._questionnaire_service.list_questionnaires())
 
         if not questionnaires:
             QMessageBox.warning(
@@ -393,9 +312,7 @@ class SubmissionsView(QWidget):
                     "Kérdőívek oldalon."
                 ),
             )
-
             return
-
         if not relations:
             QMessageBox.warning(
                 self,
@@ -418,8 +335,7 @@ class SubmissionsView(QWidget):
         result = dialog.exec()
 
         if (
-            result
-            != QDialog.DialogCode.Accepted
+            result != QDialog.DialogCode.Accepted
         ):
             return
 
@@ -434,9 +350,7 @@ class SubmissionsView(QWidget):
                 )
             )
 
-            add_test_answers(
-                submission
-            )
+            add_test_answers(submission)
 
         except (
             TypeError,
@@ -449,22 +363,22 @@ class SubmissionsView(QWidget):
             )
 
             return
-
         self.refresh()
 
-    def _import_json(self) -> None:
+    def _import_json(
+            self,
+    ) -> None:
+        if self._read_only:
+            return
         dialog = SubmissionImportDialog(
-            preview_service=(
-                self._preview_service
-            ),
+            preview_service=(self._preview_service),
             parent=self,
         )
 
         result_code = dialog.exec()
 
         if (
-            result_code
-            != QDialog.DialogCode.Accepted
+            result_code != QDialog.DialogCode.Accepted
         ):
             return
 
@@ -472,15 +386,9 @@ class SubmissionsView(QWidget):
             result = (
                 self._file_import_service
                 .import_files(
-                    definition_file=(
-                        dialog.definition_file
-                    ),
-                    submission_file=(
-                        dialog.submission_file
-                    ),
-                    questionnaire_code=(
-                        "SZTFH-ESG"
-                    ),
+                    definition_file=(dialog.definition_file),
+                    submission_file=(dialog.submission_file),
+                    questionnaire_code=("SZTFH-ESG"),
                 )
             )
 
@@ -497,10 +405,7 @@ class SubmissionsView(QWidget):
 
             return
 
-        self._show_import_result(
-            result
-        )
-
+        self._show_import_result(result)
         self.refresh()
 
     def _show_import_result(
@@ -518,13 +423,8 @@ class SubmissionsView(QWidget):
             ),
         ]
 
-        errors = (
-            result.batch_result.errors
-        )
-
-        warnings = (
-            result.batch_result.warnings
-        )
+        errors = (result.batch_result.errors)
+        warnings = (result.batch_result.warnings)
 
         if errors:
             lines.append("")
@@ -573,14 +473,8 @@ class SubmissionsView(QWidget):
         self,
         submission: Submission,
     ) -> None:
-        row = (
-            self._table.rowCount()
-        )
-
-        self._table.insertRow(
-            row
-        )
-
+        row = (self._table.rowCount())
+        self._table.insertRow( row)
         self._table.setItem(
             row,
             0,
@@ -590,7 +484,6 @@ class SubmissionsView(QWidget):
                 )
             ),
         )
-
         self._table.setItem(
             row,
             1,
@@ -601,7 +494,6 @@ class SubmissionsView(QWidget):
                 .name
             ),
         )
-
         self._table.setItem(
             row,
             2,
@@ -621,36 +513,25 @@ class SubmissionsView(QWidget):
         self._table.setItem(
             row,
             3,
-            QTableWidgetItem(
-                questionnaire_text
-            ),
+            QTableWidgetItem(questionnaire_text),
         )
-
         self._table.setItem(
             row,
             4,
-            QTableWidgetItem(
-                submission.period
-            ),
+            QTableWidgetItem(submission.period or "-")
         )
-
         status_text = (
             submission.status.value
             if hasattr(
                 submission.status,
                 "value",
             )
-            else str(
-                submission.status
-            )
+            else str(submission.status)
         )
-
         self._table.setItem(
             row,
             5,
-            QTableWidgetItem(
-                status_text
-            ),
+            QTableWidgetItem(status_text),
         )
 
     def _filter_submissions(
