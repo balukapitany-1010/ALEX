@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from alex.esg.repositories.mssql_questionnaire_definition_writer import MssqlQuestionnaireDefinitionWriter
+from alex.esg.services.mssql_questionnaire_definition_import_service import MssqlQuestionnaireDefinitionImportService
 from alex.esg.repositories.mssql_questionnaire_repository import MssqlQuestionnaireRepository
 from alex.esg.services.question_definition_read_service import QuestionDefinitionReadService
 from alex.esg.repositories.mssql_question_definition_repository import MssqlQuestionDefinitionRepository
@@ -64,6 +66,7 @@ class MainWindow(QMainWindow):
 
         self._attachment_service = (AttachmentService())
 
+
         self._supplier_service = (SupplierService())
         self._relation_service = (SupplyChainRelationService())
         supplier_repository = (MssqlSupplierRepository(db_connection_factory))
@@ -79,11 +82,10 @@ class MainWindow(QMainWindow):
         self._question_definition_service = (QuestionDefinitionService())
         question_definition_db_repository = (MssqlQuestionDefinitionRepository(db_connection_factory))
         questionnaire_db_repository = (MssqlQuestionnaireRepository(db_connection_factory))
-        self._questionnaire_db_service = (QuestionnaireService(repository=(questionnaire_db_repository)))
+
 
         self._question_definition_db_read_service = (QuestionDefinitionReadService(repository=(question_definition_db_repository)))
-        submission_answer_loader = (MssqlSubmissionAnswerLoader(connection_factory=(db_connection_factory
-                ),
+        submission_answer_loader = (MssqlSubmissionAnswerLoader(connection_factory=(db_connection_factory),
                 question_definition_repository=(question_definition_db_repository
                 ),
             )
@@ -91,6 +93,14 @@ class MainWindow(QMainWindow):
         self._submission_answer_read_service = (SubmissionAnswerReadService(loader=submission_answer_loader))
 
         self._setup_import_services()
+        self._questionnaire_db_service = (QuestionnaireService(repository=(questionnaire_db_repository)))
+        self._questionnaire_definition_db_writer = (MssqlQuestionnaireDefinitionWriter(db_connection_factory))
+        self._questionnaire_definition_db_import_service = (
+            MssqlQuestionnaireDefinitionImportService(
+                json_import_service=(self._json_import_service),
+                writer=(self._questionnaire_definition_db_writer),
+            )
+        )
 
         self.setWindowTitle("ALEX")
         self.resize(1200, 750)
@@ -104,48 +114,37 @@ class MainWindow(QMainWindow):
         self._connect_signals()
 
     def _setup_import_services(
-        self,
+            self,
     ) -> None:
-        json_service = JsonImportService()
-
+        self._json_import_service = (JsonImportService())
+        json_service = (self._json_import_service)
         definition_mapper = (QuestionnaireDefinitionMapper())
-
         batch_inspector = (SubmissionBatchImporter())
-
         definition_validator = (SubmissionDefinitionValidator())
-
         party_resolver = (SubmissionPartyResolver(company_service=(self._company_service),
                 supplier_service=(self._supplier_service),))
-
         relation_resolver = (SubmissionRelationResolver(relation_service=(self._relation_service),))
-
         submitter_resolver = (SubmissionSubmitterResolver(company_service=(self._company_service),))
-
         submission_builder = ( SubmissionBuilderService(
                 party_resolver=(party_resolver),
                 relation_resolver=(relation_resolver),
                 submitter_resolver=(submitter_resolver),
             )
         )
-
         submission_import_service = (SubmissionImportService())
-
         single_submission_importer = (SubmissionJsonImporter(
                 header_mapper=(SubmissionHeaderMapper()),
                 builder=(submission_builder),
                 submission_import_service=(submission_import_service),
             )
         )
-
         batch_json_importer = ( SubmissionBatchJsonImporter(
                 batch_inspector=(batch_inspector),
                 definition_validator=(definition_validator),
                 submission_importer=(single_submission_importer),
             )
         )
-
         registration_service = (SubmissionBatchRegistrationService(submission_service=(self._submission_service),))
-
         self._submission_file_import_service = (
             SubmissionFileImportService(
                 json_service=json_service,
@@ -156,7 +155,6 @@ class MainWindow(QMainWindow):
                 question_definition_service=(self._question_definition_service),
             )
         )
-
         self._submission_import_preview_service = (
             SubmissionImportPreviewService(
                 json_service=json_service,
@@ -254,6 +252,9 @@ class MainWindow(QMainWindow):
             ),
             question_definition_read_service=(
                 self._question_definition_db_read_service
+            ),
+            mssql_definition_import_service=(
+                self._questionnaire_definition_db_import_service
             ),
             read_only=True,
         )

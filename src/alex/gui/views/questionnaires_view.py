@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from alex.esg.services.mssql_questionnaire_definition_import_service import MssqlQuestionnaireDefinitionImportService
 from alex.esg.services.question_definition_read_service import QuestionDefinitionReadService
 from alex.esg.domain.questionnaire import Questionnaire
 from alex.esg.services.question_definition_service import QuestionDefinitionService
@@ -25,10 +26,27 @@ class QuestionnairesView(QWidget):
             question_definition_service: QuestionDefinitionService,
             definition_file_import_service: (QuestionnaireDefinitionFileImportService),
             question_definition_read_service: (QuestionDefinitionReadService | None) = None,
+            mssql_definition_import_service=None,
             read_only: bool = False,
             parent=None,
     ) -> None:
         super().__init__(parent)
+
+        if (
+                mssql_definition_import_service is not None
+                and not isinstance(
+            mssql_definition_import_service,
+            MssqlQuestionnaireDefinitionImportService,
+        )
+        ):
+            raise TypeError(
+                "mssql_definition_import_service must be "
+                "MssqlQuestionnaireDefinitionImportService or None"
+            )
+
+        self._mssql_definition_import_service = (
+            mssql_definition_import_service
+        )
 
         if not isinstance(
                 questionnaire_service,
@@ -88,23 +106,25 @@ class QuestionnairesView(QWidget):
         self._setup_ui()
         self._connect_signals()
         self.refresh()
-        if not isinstance(
-                definition_file_import_service,
-                QuestionnaireDefinitionFileImportService,
-        ):
-            raise TypeError(
-                "definition_file_import_service must be a "
-                "QuestionnaireDefinitionFileImportService"
-            )
+
 
         self._definition_file_import_service = (definition_file_import_service)
         self._question_definition_read_service = (question_definition_read_service)
         self._read_only = read_only
-        if self._read_only:
-            self._import_button.setEnabled(False )
+        if (
+                self._mssql_definition_import_service
+                is not None
+        ):
+            self._import_button.setEnabled(True)
             self._import_button.setToolTip(
-                "Az MSSQL kérdőív import még "
-                "nincs bekötve."
+                "Kérdőív-definíció importálása "
+                "az MSSQL adatbázisba."
+            )
+
+        elif self._read_only:
+            self._import_button.setEnabled(False)
+            self._import_button.setToolTip(
+                "A kérdőív import nem engedélyezett."
             )
 
     def _setup_ui(self) -> None:
@@ -163,8 +183,6 @@ class QuestionnairesView(QWidget):
     def _import_questionnaire_definition(
             self,
     ) -> None:
-        if self._read_only:
-            return
         definition_file, _ = (
             QFileDialog.getOpenFileName(
                 self,
@@ -177,12 +195,80 @@ class QuestionnairesView(QWidget):
         if not definition_file:
             return
 
+        if (
+                self._mssql_definition_import_service
+                is not None
+        ):
+            answer = QMessageBox.question(
+                self,
+                "MSSQL import megerősítése",
+                (
+                    "A kiválasztott kérdőív-definíció "
+                    "az MSSQL adatbázisba kerül.\n\n"
+                    f"Fájl:\n{definition_file}\n\n"
+                    "Folytatod?"
+                ),
+                (
+                        QMessageBox.StandardButton.Yes
+                        | QMessageBox.StandardButton.No
+                ),
+                QMessageBox.StandardButton.No,
+            )
+
+            if (
+                    answer
+                    != QMessageBox.StandardButton.Yes
+            ):
+                return
+
+            try:
+                (
+                    self
+                    ._mssql_definition_import_service
+                    .import_file(
+                        definition_file,
+                        questionnaire_code="SZTFH",
+                    )
+                )
+
+            except Exception as error:
+                QMessageBox.critical(
+                    self,
+                    "Kérdőív import hiba",
+                    str(error),
+                )
+                return
+
+            self.refresh()
+
+            QMessageBox.information(
+                self,
+                "Kérdőív import",
+                (
+                    "A kérdőív-definíció "
+                    "MSSQL importálása sikerült."
+                ),
+            )
+
+            return
+
+        if self._read_only:
+            QMessageBox.information(
+                self,
+                "Csak olvasható",
+                (
+                    "Ebben a nézetben a "
+                    "kérdőív import nem engedélyezett."
+                ),
+            )
+            return
+
         try:
             result = (
                 self._definition_file_import_service
                 .import_file(
                     definition_file=definition_file,
-                    questionnaire_code="SZTFH-ESG",
+                    questionnaire_code="SZTFH",
                 )
             )
 
@@ -196,7 +282,6 @@ class QuestionnairesView(QWidget):
                 "Kérdőív import hiba",
                 str(error),
             )
-
             return
 
         self.refresh()
@@ -220,7 +305,6 @@ class QuestionnairesView(QWidget):
                 f"{result.reused_count}"
             ),
         )
-
     def _list_definitions(
             self,
             questionnaire: Questionnaire,

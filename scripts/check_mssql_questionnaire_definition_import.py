@@ -69,9 +69,15 @@ def extract_storage_options(
             )
 
             def add_option(
-                *,
-                option_id,
-                text=None,
+                    *,
+                    option_id,
+                    text=None,
+                    status="active",
+                    step_value=None,
+                    max_value=None,
+                    min_value=None,
+                    unit=None,
+                    input_type=None,
             ) -> None:
                 if option_id is None:
                     return
@@ -90,8 +96,17 @@ def extract_storage_options(
                             f"{option_id}"
                         )
                     return
-                result[option_id] = {"question_id": (question_id),
-                    "text": (optional_text(text)),
+                result[option_id] = {
+                    "question_id": question_id,
+                    "text": optional_text(text),
+                    "status": optional_text(status),
+                    "step_value": step_value,
+                    "max_value": max_value,
+                    "min_value": min_value,
+                    "unit": optional_text(unit),
+                    "input_type": optional_text(
+                        input_type
+                    ),
                 }
             choices = (element.get("choices") or [])
             for choice in choices:
@@ -128,8 +143,26 @@ def extract_storage_options(
             element_type = str(element.get("type", "",)).strip().lower()
 
             if element_type == "number":
-                add_option(option_id=( question_id),
-                    text=(question_title),
+                add_option(
+                    option_id=question_id,
+                    text=None,
+                    status=(
+                            element.get("status")
+                            or "active"
+                    ),
+                    step_value=element.get(
+                        "step"
+                    ),
+                    max_value=element.get(
+                        "max"
+                    ),
+                    min_value=element.get(
+                        "min"
+                    ),
+                    unit=element.get(
+                        "unit"
+                    ),
+                    input_type="number",
                 )
     return result
 
@@ -374,8 +407,36 @@ def main() -> None:
 
     new_question_links = (set(incoming_questions) - existing_question_links)
     reused_question_links = (set(incoming_questions) & existing_question_links)
-    new_option_links = (set(incoming_options) - existing_option_links)
-    reused_option_links = (set(incoming_options) & existing_option_links)
+    question_types_by_id = {
+        definition.question.question_id:
+            definition.question_type.value
+        for definition in definitions
+    }
+
+    linkable_option_ids = {
+        option_id
+        for option_id, data
+        in incoming_options.items()
+        if (
+                question_types_by_id.get(
+                    data["question_id"]
+                )
+                not in {
+                    "number",
+                    "table",
+                }
+        )
+    }
+
+    new_option_links = (
+            linkable_option_ids
+            - existing_option_links
+    )
+
+    reused_option_links = (
+            linkable_option_ids
+            & existing_option_links
+    )
 
     print()
     print("KÉRDŐÍV MSSQL IMPORT DRY-RUN")
@@ -463,6 +524,65 @@ def main() -> None:
             print(" ", warning[0],)
 
     print()
+    if option_new:
+        print()
+        print("Új QUESTION_OPTION rekordok:")
+
+        for option_id in sorted(option_new
+        ):
+            data = incoming_options[option_id]
+
+            print(
+                " ",
+                option_id,
+                "| question_id:",
+                data["question_id"],
+                "| text:",
+                data["text"],
+                "| status:",
+                data["status"],
+                "| min:",
+                data["min_value"],
+                "| max:",
+                data["max_value"],
+                "| step:",
+                data["step_value"],
+                "| unit:",
+                data["unit"],
+                "| input_type:",
+                data["input_type"],
+            )
+    if new_option_links:
+        print()
+        print(
+            "Hiányzó QUESTIONNAIRE_OPTION "
+            "kapcsolatok:"
+        )
+
+        for option_id in sorted(new_option_links
+        ):
+            data = incoming_options[option_id]
+
+            print(
+                " ",
+                option_id,
+                "| question_id:",
+                data["question_id"],
+                "| text:",
+                data["text"],
+                "| status:",
+                data["status"],
+                "| min:",
+                data["min_value"],
+                "| max:",
+                data["max_value"],
+                "| step:",
+                data["step_value"],
+                "| unit:",
+                data["unit"],
+                "| input_type:",
+                data["input_type"],
+            )
     print("ADATBÁZIS-ÍRÁS: 0 rekord")
     print("Ez a script csak ellenőrzött.")
 
