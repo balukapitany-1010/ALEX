@@ -97,6 +97,24 @@ def main() -> None:
         existing_questions = {str(row[0]).strip(): (optional_text(row[1]))
             for row in cursor.fetchall()
         }
+        cursor.execute(
+            """
+            SELECT
+                questionnaire_code,
+                spec_version,
+                question_id
+            FROM dbo.QUESTIONNAIRE_QUESTION
+            """
+        )
+
+        existing_questionnaire_questions = {
+            (
+                str(row[0]).strip(),
+                str(row[1]).strip(),
+                str(row[2]).strip(),
+            )
+            for row in cursor.fetchall()
+        }
 
         cursor.execute(
             """
@@ -241,6 +259,13 @@ def main() -> None:
 
     total_questions = 0
     total_values = 0
+
+    valid_questions = 0
+    valid_values = 0
+
+    not_in_questionnaire_questions = defaultdict(int)
+    not_in_questionnaire_values = 0
+
     unknown_questions = set()
     unknown_options = set()
     wrong_option_question = []
@@ -428,13 +453,47 @@ def main() -> None:
             ):
                 unknown_questions.add("<HIÁNYZÓ id>")
                 continue
-            technical_question_ids.append(technical_question_id)
+            technical_question_ids.append(
+                technical_question_id
+            )
+
             total_questions += 1
-            if (
-                technical_question_id not in existing_questions
-            ):
-                unknown_questions.add(technical_question_id)
-            fields = question.get("fields") or []
+
+            question_known = (
+                    technical_question_id
+                    in existing_questions
+            )
+
+            question_in_version = False
+
+            if not question_known:
+                unknown_questions.add(
+                    technical_question_id
+                )
+
+            else:
+                questionnaire_question_key = (
+                    survey_type,
+                    spec_version,
+                    technical_question_id,
+                )
+
+                question_in_version = (
+                        questionnaire_question_key
+                        in existing_questionnaire_questions
+                )
+
+                if question_in_version:
+                    valid_questions += 1
+
+                else:
+                    not_in_questionnaire_questions[
+                        technical_question_id
+                    ] += 1
+
+            fields = question.get(
+                "fields"
+            ) or []
             if not isinstance(
                 fields,
                 list,
@@ -459,7 +518,26 @@ def main() -> None:
                     raise ValueError("field.values nem lista: " f"{technical_question_id}")
                 for value in values:
                     total_values += 1
-                    option_id = (optional_text(value.get("optionId")))
+
+                    if (
+                            question_known
+                            and not question_in_version
+                    ):
+                        not_in_questionnaire_values += 1
+                        continue
+
+                    if not question_known:
+                        continue
+
+                    valid_values += 1
+
+                    option_id = (
+                        optional_text(
+                            value.get(
+                                "optionId"
+                            )
+                        )
+                    )
                     if option_id is None:
                         continue
                     option_question_id = (existing_options.get(option_id))
@@ -624,8 +702,40 @@ def main() -> None:
                 )
             )
     print()
-    print("JSON kérdésrekordok:",total_questions,)
-    print("JSON válaszértékek:",total_values,)
+    print(
+        "JSON kérdésrekordok:",
+        total_questions,
+    )
+
+    print(
+        "Érvényes kérdésrekordok:",
+        valid_questions,
+    )
+
+    print(
+        "Verzióhoz nem tartozó kérdésrekordok:",
+        sum(
+            not_in_questionnaire_questions.values()
+        ),
+    )
+
+    print()
+
+    print(
+        "JSON válaszértékek:",
+        total_values,
+    )
+
+    print(
+        "Érvényes válaszértékek:",
+        valid_values,
+    )
+
+    print(
+        "Kihagyott válaszértékek "
+        "(verzión kívüli kérdés):",
+        not_in_questionnaire_values,
+    )
     print()
     print("Ismeretlen question_id-k:",len(unknown_questions),)
     print("Ismeretlen option_id-k:",len(unknown_options),)
@@ -730,6 +840,26 @@ def main() -> None:
 
         for item in (questionnaire_missing):
             print(" ", item,)
+
+    if not_in_questionnaire_questions:
+        print()
+        print(
+            "Verzióhoz nem tartozó kérdések:"
+        )
+
+        for (
+            question_id,
+            count,
+        ) in sorted(
+            not_in_questionnaire_questions.items()
+        ):
+            print(
+                " ",
+                question_id,
+                "|",
+                count,
+                "db",
+            )
 
     if unknown_questions:
         print()

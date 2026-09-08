@@ -1,20 +1,11 @@
 from alex.esg.domain.company import Company
 from alex.esg.domain.supplier import Supplier
-from alex.esg.domain.supply_chain_relation import (
-    SupplyChainRelation,
-)
-from alex.esg.repositories.supply_chain_relation_repository import (
-    SupplyChainRelationRepository,
-)
+from alex.esg.domain.supply_chain_relation import SupplyChainRelation
+from alex.esg.repositories.supply_chain_relation_repository import SupplyChainRelationRepository
 
-
-class InMemorySupplyChainRelationRepository(
-    SupplyChainRelationRepository
-):
+class InMemorySupplyChainRelationRepository(SupplyChainRelationRepository):
     def __init__(self) -> None:
-        self._relations: list[
-            SupplyChainRelation
-        ] = []
+        self._relations: list[SupplyChainRelation] = []
 
     def add(
         self,
@@ -24,14 +15,10 @@ class InMemorySupplyChainRelationRepository(
             relation,
             SupplyChainRelation,
         ):
-            raise TypeError(
-                "relation must be a SupplyChainRelation"
-            )
+            raise TypeError("relation must be a SupplyChainRelation")
 
         if (
-            self.get_by_id(
-                relation.relation_id
-            )
+            self.get_by_id(relation.relation_id)
             is not None
         ):
             raise ValueError(
@@ -51,29 +38,17 @@ class InMemorySupplyChainRelationRepository(
                 "and supplier already exists"
             )
 
-        self._relations.append(
-            relation
-        )
-
+        self._relations.append(relation)
         return relation
-
     def remove(
         self,
         relation_id: str,
     ) -> SupplyChainRelation:
-        relation = self.get_by_id(
-            relation_id
-        )
-
+        relation = self.get_by_id(relation_id)
         if relation is None:
-            raise ValueError(
-                "relation does not exist"
-            )
+            raise ValueError("relation does not exist")
 
-        self._relations.remove(
-            relation
-        )
-
+        self._relations.remove(relation)
         return relation
 
     def list_all(
@@ -82,9 +57,7 @@ class InMemorySupplyChainRelationRepository(
         SupplyChainRelation,
         ...
     ]:
-        return tuple(
-            self._relations
-        )
+        return tuple(self._relations)
 
     def get_by_id(
         self,
@@ -94,26 +67,16 @@ class InMemorySupplyChainRelationRepository(
             relation_id,
             str,
         ):
-            raise TypeError(
-                "relation_id must be a string"
-            )
-
-        normalized = (
-            relation_id.strip()
-        )
-
+            raise TypeError("relation_id must be a string")
+        normalized = (relation_id.strip())
         if not normalized:
-            raise ValueError(
-                "relation_id cannot be empty"
-            )
+            raise ValueError("relation_id cannot be empty")
 
         for relation in self._relations:
             if (
-                relation.relation_id
-                == normalized
+                relation.relation_id == normalized
             ):
                 return relation
-
         return None
 
     def get_by_parties(
@@ -126,25 +89,16 @@ class InMemorySupplyChainRelationRepository(
             requester,
             Company,
         ):
-            raise TypeError(
-                "requester must be a Company"
-            )
+            raise TypeError("requester must be a Company")
 
         if not isinstance(
             supplier,
             Supplier,
         ):
-            raise TypeError(
-                "supplier must be a Supplier"
-            )
+            raise TypeError("supplier must be a Supplier")
 
         for relation in self._relations:
-            if (
-                relation.requester.company_key
-                == requester.company_key
-                and
-                relation.supplier.company_key
-                == supplier.company_key
+            if (relation.requester.company_key == requester.company_key and relation.supplier.company_key == supplier.company_key
             ):
                 return relation
 
@@ -161,16 +115,11 @@ class InMemorySupplyChainRelationRepository(
             requester,
             Company,
         ):
-            raise TypeError(
-                "requester must be a Company"
-            )
+            raise TypeError("requester must be a Company")
 
-        return tuple(
-            relation
-            for relation in self._relations
+        return tuple(relation for relation in self._relations
             if (
-                relation.requester.company_key
-                == requester.company_key
+                relation.requester.company_key == requester.company_key
             )
         )
 
@@ -185,15 +134,10 @@ class InMemorySupplyChainRelationRepository(
             supplier,
             Supplier,
         ):
-            raise TypeError(
-                "supplier must be a Supplier"
-            )
+            raise TypeError("supplier must be a Supplier")
 
-        return tuple(
-            relation
-            for relation in self._relations
+        return tuple(relation for relation in self._relations
             if (
-                relation.supplier.company_key
-                == supplier.company_key
+                relation.supplier.company_key == supplier.company_key
             )
         )

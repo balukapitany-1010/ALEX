@@ -1,0 +1,132 @@
+from datetime import datetime
+from alex.esg.services.submission_persistence_mapper import SubmissionPersistenceMapper
+
+def test_normalizes_requester_tax_number():
+    assert (SubmissionPersistenceMapper.normalize_tax_number("11107792-2-44") == "11107792244")
+
+def test_creates_external_supplier_key():
+    assert (SubmissionPersistenceMapper.create_external_supplier_key("11102481207") == "SUP_11102481207")
+
+def test_creates_respondent_id():
+    assert (SubmissionPersistenceMapper.create_respondent_id(
+            "11102481207",
+            "2024",) == "RESP_11102481207_2024")
+
+
+def test_creates_noperiod_respondent_id():
+    assert (SubmissionPersistenceMapper.create_respondent_id(
+            "11102481207",
+            None,
+        ) == "RESP_11102481207_NOPERIOD")
+
+
+def test_creates_batch_id():
+    created_at = datetime(
+        2026,
+        5,
+        7,
+        13,
+        54,
+        21,
+    )
+
+    assert (SubmissionPersistenceMapper.create_batch_id(
+            "11107792-2-44",
+            created_at,
+        ) == "BATCH_11107792244_20260507135421")
+
+def test_parses_utc_submitted_at():
+    result = (SubmissionPersistenceMapper.parse_submitted_at("2026-02-26T07:39:59Z"))
+
+    assert result == datetime(
+        2026,
+        2,
+        26,
+        7,
+        39,
+        59,
+    )
+
+
+def test_maps_yettel_submission_header():
+    payload = {
+        "supplier_key": None,
+        "response": {
+            "survey_type": "SZTFH",
+            "respondent_id": None,
+            "respondent_MP_id": None,
+            "org_size": None,
+            "submitted_at": (
+                "2026-02-26T07:39:59Z"
+            ),
+            "cover": {
+                "supplier": {
+                    "tax_number": (
+                        "11102481207"
+                    ),
+                    "period": "2024",
+                }
+            },
+        },
+    }
+
+    result = (SubmissionPersistenceMapper.map_submission(
+            submission_payload=payload,
+            batch_id=(
+                "BATCH_11107792244_"
+                "20260507135421"
+            ),
+            relation_id=274,
+        )
+    )
+
+    assert result.batch_id == (
+        "BATCH_11107792244_"
+        "20260507135421"
+    )
+
+    assert result.relation_id == 274
+    assert (result.external_supplier_key == "SUP_11102481207")
+    assert (result.respondent_id == "RESP_11102481207_2024")
+    assert result.respondent_mp_id is None
+    assert result.org_size is None
+    assert result.submitted_at == datetime(
+        2026,
+        2,
+        26,
+        7,
+        39,
+        59,
+    )
+
+    assert (result.status == "imported_complete")
+
+def test_preserves_existing_identifiers():
+    payload = {
+        "supplier_key": (
+            "SUP_ALREADY_PRESENT"
+        ),
+        "response": {
+            "respondent_id": (
+                "RESP_ALREADY_PRESENT"
+            ),
+            "submitted_at": None,
+            "cover": {
+                "supplier": {
+                    "tax_number": (
+                        "11102481207"
+                    ),
+                    "period": "2024",
+                }
+            },
+        },
+    }
+
+    result = (SubmissionPersistenceMapper.map_submission(
+            submission_payload=payload,
+            batch_id="BATCH_TEST",
+            relation_id=123,
+        )
+    )
+    assert (result.external_supplier_key == "SUP_ALREADY_PRESENT")
+    assert (result.respondent_id == "RESP_ALREADY_PRESENT")
