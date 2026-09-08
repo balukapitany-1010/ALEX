@@ -48,8 +48,25 @@ def main() -> None:
         encoding="utf-8-sig",
     ) as handle:
         data = json.load(handle)
-
+    print(
+        "JSON root kulcsok:",
+        sorted(
+            data.keys()
+        ),
+    )
     submissions = data.get("submissions")
+    root_requester = (data.get("requester"))
+
+    print()
+    print("ROOT requester:")
+
+    print(
+        json.dumps(
+            root_requester,
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
     if not isinstance(
         submissions,
@@ -113,6 +130,7 @@ def main() -> None:
     different_count = 0
     error_count = 0
     requester_equal_count = 0
+    requester_mp_null_string_count = 0
 
 
 
@@ -198,15 +216,62 @@ def main() -> None:
         ]
 
         exact_equal = (submission == db_payload)
-
         response_equal = (submission.get("response") == db_payload.get("response"))
         json_requester = ((submission.get("response")or {}).get( "cover",{}).get("requester"))
-
         db_top_level_requester = (db_payload.get("requester"))
-
         requester_equal = (json_requester == db_top_level_requester)
+        requester_differences = {}
+        if (isinstance(json_requester, dict) and isinstance(db_top_level_requester, dict)
+        ):
+            requester_keys = (set(json_requester.keys()) | set(db_top_level_requester.keys()))
+
+            for key in sorted(requester_keys):
+                json_value = json_requester.get(key)
+                db_value = db_top_level_requester.get(key)
+
+                if json_value != db_value:
+                    requester_differences[key] = {
+                        "json": json_value,
+                        "db": db_value,
+                    }
+
+            if requester_differences == {
+                "requester_MP_id": {
+                    "json": None,
+                    "db": "null",
+                }
+            }:
+                requester_mp_null_string_count += 1
         if requester_equal:
             requester_equal_count += 1
+
+        if index == 1:
+            print()
+            print("JSON response.cover.requester:")
+            print(json.dumps(
+                    json_requester,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+
+            print()
+            print("DB top-level requester:")
+            print(
+                json.dumps(
+                    db_top_level_requester,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+
+
+            print()
+
+        print(
+            "  requester eltérések:",
+            requester_differences,
+        )
 
         print("  teljes payload egyezik:",exact_equal,)
         print(
@@ -247,11 +312,16 @@ def main() -> None:
         "Eltérő payload:",
         different_count,
     )
-
+    print(
+        "Csak requester_MP_id "
+        "null -> 'null' eltérés:",
+        requester_mp_null_string_count,
+    )
     print(
         "requester pontos másolat:",
         requester_equal_count,
     )
+
 
     print(
         "Hiba:",

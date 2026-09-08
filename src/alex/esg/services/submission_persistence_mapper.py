@@ -194,16 +194,45 @@ class SubmissionPersistenceMapper:
             )
         respondent_mp_id = (cls.optional_text(response.get("respondent_MP_id")))
         org_size = cls.optional_text(response.get("org_size"))
-        submitted_at = (cls.parse_submitted_at(response.get("submitted_at")))
+        submitted_at = (
+            cls.parse_submitted_at(
+                response.get("submitted_at")
+            )
+        )
+
+        raw_payload_data = (
+            cls._build_raw_payload(
+                submission_payload
+            )
+        )
 
         return SubmissionPersistenceData(
             batch_id=batch_id,
             relation_id=relation_id,
-            external_supplier_key=(external_supplier_key),
+            external_supplier_key=external_supplier_key,
             respondent_id=respondent_id,
-            respondent_mp_id=(respondent_mp_id),
+            respondent_mp_id=respondent_mp_id,
             org_size=org_size,
             submitted_at=submitted_at,
             status=status,
-            raw_payload=(cls.serialize_raw_payload(submission_payload)),
+            raw_payload=(
+                cls.serialize_raw_payload(
+                    raw_payload_data
+                )
+            ),
         )
+
+    @staticmethod
+    def _build_raw_payload(
+            submission_payload: dict,
+    ) -> dict:
+        raw_payload = dict(submission_payload)
+        response = (submission_payload.get( "response") or {})
+        cover = (response.get("cover")or {})
+        requester = cover.get("requester")
+        if isinstance(
+                requester,
+                dict,
+        ):
+            raw_payload["requester"] = dict(requester)
+        return raw_payload
