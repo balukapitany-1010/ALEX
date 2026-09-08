@@ -28,14 +28,11 @@ class MssqlSubmissionWriter:
         self,
         connection_factory,
     ) -> None:
+        self._next_submission_id = 1000
         if connection_factory is None:
-            raise ValueError(
-                "connection_factory is required"
-            )
+            raise ValueError("connection_factory is required")
 
-        self._connection_factory = (
-            connection_factory
-        )
+        self._connection_factory = (connection_factory)
 
     def preflight(
         self,
@@ -63,7 +60,7 @@ class MssqlSubmissionWriter:
             )
 
             existing_submission_id = (
-                self._find_existing_submission_id(
+                self._find_existing_submission_id_read_only(
                     cursor,
                     plan,
                 )
@@ -109,7 +106,7 @@ class MssqlSubmissionWriter:
             )
 
             existing_submission_id = (
-                self._find_existing_submission_id(
+                self._find_existing_submission_id_for_write(
                     cursor,
                     plan,
                 )
@@ -174,6 +171,147 @@ class MssqlSubmissionWriter:
 
         finally:
             connection.close()
+    def write_many(
+        self,
+        plans: list[
+            SubmissionPersistencePlan
+        ],
+    ) -> tuple[
+        MssqlSubmissionWriteResult,
+        ...
+    ]:
+        if not isinstance(
+            plans,
+            list,
+        ):
+            raise TypeError(
+                "plans must be a list"
+            )
+
+        if not plans:
+            return ()
+
+        for plan in plans:
+            if not isinstance(
+                plan,
+                SubmissionPersistencePlan,
+            ):
+                raise TypeError(
+                    "all plans must be "
+                    "SubmissionPersistencePlan"
+                )
+
+        batch_ids = {
+            plan.submission.batch_id
+            for plan in plans
+        }
+
+        if len(batch_ids) != 1:
+            raise ValueError(
+                "all plans must belong "
+                "to the same batch"
+            )
+
+        batch_id = next(
+            iter(batch_ids)
+        )
+
+        connection = (
+            self._connection_factory.connect()
+        )
+
+        try:
+            cursor = connection.cursor()
+
+            self._ensure_batch_exists(
+                cursor,
+                batch_id,
+            )
+
+            results = []
+
+            for plan in plans:
+                existing_submission_id = (
+                    self._find_existing_submission_id_for_write(
+                        cursor,
+                        plan,
+                    )
+                )
+
+                if (
+                    existing_submission_id
+                    is not None
+                ):
+                    results.append(
+                        MssqlSubmissionWriteResult(
+                            submission_id=(
+                                existing_submission_id
+                            ),
+                            created=False,
+                            answer_count=0,
+                            answer_value_count=0,
+                        )
+                    )
+
+                    continue
+
+                submission_id = (
+                    self._insert_submission(
+                        cursor,
+                        plan,
+                    )
+                )
+
+                answer_count = 0
+                answer_value_count = 0
+
+                for answer in plan.answers:
+                    submission_answer_id = (
+                        self._insert_submission_answer(
+                            cursor,
+                            submission_id,
+                            answer.question_id,
+                        )
+                    )
+
+                    answer_count += 1
+
+                    for value in answer.values:
+                        self._insert_answer_value(
+                            cursor,
+                            submission_answer_id,
+                            value,
+                        )
+
+                        answer_value_count += 1
+
+                results.append(
+                    MssqlSubmissionWriteResult(
+                        submission_id=(
+                            submission_id
+                        ),
+                        created=True,
+                        answer_count=(
+                            answer_count
+                        ),
+                        answer_value_count=(
+                            answer_value_count
+                        ),
+                    )
+                )
+
+            connection.commit()
+
+            return tuple(
+                results
+            )
+
+        except Exception:
+            connection.rollback()
+            raise
+
+        finally:
+            connection.close()
 
     @staticmethod
     def _ensure_batch_exists(
@@ -194,16 +332,67 @@ class MssqlSubmissionWriter:
             raise ValueError("SUBMISSION_BATCH does not exist: " f"{batch_id}")
 
     @staticmethod
-    def _find_existing_submission_id(
-        cursor,
-        plan: SubmissionPersistencePlan,
+    def _find_existing_submission_id_read_only(
+            cursor,
+            plan: SubmissionPersistencePlan,
+    ) -> int | None:
+        submission = plan.submission
+
+        cursor.execute(
+            """
+            SELECT
+                submission_id
+            FROM dbo.SUBMISSION
+            WHERE batch_id = ?
+              AND relation_id = ?
+              AND respondent_id = ?
+              AND (
+                    respondent_mp_id = ?
+                    OR (
+                        respondent_mp_id IS NULL
+                        AND ? IS NULL
+                    )
+                  )
+            ORDER BY submission_id
+            """,
+            submission.batch_id,
+            submission.relation_id,
+            submission.respondent_id,
+            submission.respondent_mp_id,
+            submission.respondent_mp_id,
+        )
+
+        first_row = cursor.fetchone()
+
+        if first_row is None:
+            return None
+
+        second_row = cursor.fetchone()
+
+        if second_row is not None:
+            raise RuntimeError(
+                "multiple matching submissions "
+                "already exist"
+            )
+
+        return int(
+            first_row[0]
+        )
+
+    @staticmethod
+    def _find_existing_submission_id_for_write(
+            cursor,
+            plan: SubmissionPersistencePlan,
     ) -> int | None:
         submission = plan.submission
         cursor.execute(
             """
             SELECT
                 submission_id
-            FROM dbo.SUBMISSION
+            FROM dbo.SUBMISSION WITH (
+                UPDLOCK,
+                HOLDLOCK
+            )
             WHERE batch_id = ?
               AND relation_id = ?
               AND respondent_id = ?

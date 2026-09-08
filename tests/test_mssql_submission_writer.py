@@ -20,6 +20,7 @@ class FakeCursor:
         self.fail_on_answer_value = (fail_on_answer_value)
         self.executed = []
         self._rows = []
+        self._next_submission_id = 1000
         self._next_answer_id = 2000
 
     def execute(
@@ -57,13 +58,26 @@ class FakeCursor:
                     (self.existing_submission_id, )
                 ]
 
-        elif (
-            "INSERT INTO dbo.SUBMISSION " in normalized_sql
-        ):
-            self._rows = [
-                (1001,)
-            ]
 
+        elif (
+
+                "INSERT INTO dbo.SUBMISSION "
+
+                in normalized_sql
+
+        ):
+
+            self._next_submission_id += 1
+
+            self._rows = [
+
+                (
+
+                    self._next_submission_id,
+
+                )
+
+            ]
         elif (
             "INSERT INTO "
             "dbo.SUBMISSION_ANSWER"
@@ -297,3 +311,212 @@ def test_preflight_rejects_missing_batch():
             sql,
             params,
         ) in cursor.executed)
+
+def test_write_many_commits_complete_batch_once():
+    cursor = FakeCursor()
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    first_plan = create_plan()
+
+    second_submission = (
+        SubmissionPersistenceData(
+            batch_id="BATCH_TEST",
+            relation_id=275,
+            external_supplier_key=(
+                "SUP_10654411243"
+            ),
+            respondent_id=(
+                "RESP_10654411243_2024"
+            ),
+            respondent_mp_id=None,
+            org_size=None,
+            submitted_at=None,
+            status="imported_complete",
+            raw_payload="{}",
+        )
+    )
+
+    second_plan = (
+        SubmissionPersistencePlan(
+            submission=second_submission,
+            answers=first_plan.answers,
+            skipped_question_ids=(),
+        )
+    )
+
+    results = writer.write_many(
+        [
+            first_plan,
+            second_plan,
+        ]
+    )
+
+    assert len(results) == 2
+
+    assert results[0].created is True
+    assert results[1].created is True
+
+    assert (
+        results[0].submission_id
+        == 1001
+    )
+
+    assert (
+        results[1].submission_id
+        == 1002
+    )
+
+    assert connection.committed is True
+    assert connection.rolled_back is False
+    assert connection.closed is True
+
+
+def test_write_many_rejects_multiple_batches():
+    first_plan = create_plan()
+
+    second_submission = (
+        SubmissionPersistenceData(
+            batch_id="OTHER_BATCH",
+            relation_id=275,
+            external_supplier_key="SUP_TEST",
+            respondent_id="RESP_TEST",
+            respondent_mp_id=None,
+            org_size=None,
+            submitted_at=None,
+            status="imported_complete",
+            raw_payload="{}",
+        )
+    )
+
+    second_plan = (
+        SubmissionPersistencePlan(
+            submission=second_submission,
+            answers=(),
+            skipped_question_ids=(),
+        )
+    )
+
+    cursor = FakeCursor()
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="same batch",
+    ):
+        writer.write_many(
+            [
+                first_plan,
+                second_plan,
+            ]
+        )
+
+    assert connection.committed is False
+
+
+def test_write_many_rolls_back_complete_batch_on_error():
+    cursor = FakeCursor(
+        fail_on_answer_value=True
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="simulated database error",
+    ):
+        writer.write_many(
+            [
+                create_plan(),
+            ]
+        )
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+def test_preflight_does_not_use_update_locks():
+    cursor = FakeCursor(
+        existing_submission_id=323
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    writer.preflight(
+        create_plan()
+    )
+
+    executed_sql = "\n".join(
+        sql
+        for (
+            sql,
+            params,
+        ) in cursor.executed
+    )
+
+    assert "UPDLOCK" not in executed_sql
+    assert "HOLDLOCK" not in executed_sql
+
+
+def test_write_uses_duplicate_prevention_locks():
+    cursor = FakeCursor(
+        existing_submission_id=323
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    writer.write(
+        create_plan()
+    )
+
+    executed_sql = "\n".join(
+        sql
+        for (
+            sql,
+            params,
+        ) in cursor.executed
+    )
+
+    assert "UPDLOCK" in executed_sql
+    assert "HOLDLOCK" in executed_sql
