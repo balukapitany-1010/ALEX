@@ -21,20 +21,20 @@ class SubmissionPersistenceData:
 class SubmissionPersistenceMapper:
     @staticmethod
     def normalize_tax_number(
-        tax_number: str,
+            tax_number: str,
     ) -> str:
         if not isinstance(
-            tax_number,
-            str,
+                tax_number,
+                str,
         ):
             raise TypeError("tax_number must be a string")
-        normalized = re.sub(
-            r"\D",
-            "",
-            tax_number,
+
+        normalized = "".join(character for character in tax_number.upper() if character.isalnum()
         )
+
         if not normalized:
             raise ValueError("tax_number cannot be empty")
+
         return normalized
 
     @classmethod

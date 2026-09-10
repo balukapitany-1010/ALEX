@@ -253,3 +253,50 @@ def test_raw_payload_does_not_modify_original_submission():
         "requester"
         not in payload
     )
+
+def test_normalize_tax_number_preserves_country_prefix():
+    result = (
+        SubmissionPersistenceMapper
+        .normalize_tax_number(
+            "IT02228260200"
+        )
+    )
+
+    assert result == "IT02228260200"
+
+
+def test_normalize_tax_number_removes_foreign_formatting():
+    result = (
+        SubmissionPersistenceMapper
+        .normalize_tax_number(
+            "CHE-153.922.051"
+        )
+    )
+
+    assert result == "CHE153922051"
+
+
+def test_create_external_supplier_key_preserves_country_prefix():
+    result = (
+        SubmissionPersistenceMapper
+        .create_external_supplier_key(
+            "IT02228260200"
+        )
+    )
+
+    assert result == "SUP_IT02228260200"
+
+
+def test_create_respondent_id_preserves_country_prefix():
+    result = (
+        SubmissionPersistenceMapper
+        .create_respondent_id(
+            "IT02228260200",
+            "2025",
+        )
+    )
+
+    assert (
+        result
+        == "RESP_IT02228260200_2025"
+    )

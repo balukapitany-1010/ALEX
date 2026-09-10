@@ -43,12 +43,16 @@ class SubmissionImportItemResult:
 class SubmissionImportDryRunResult:
     batch_id: str
     questionnaire_code: str
+    batch_exists: bool
     spec_version: str
     items: tuple[
         SubmissionImportItemResult,
         ...
     ]
 
+    @property
+    def batch_is_new(self) -> bool:
+        return not self.batch_exists
     @property
     def submission_count(self) -> int:
         return len(self.items)
@@ -76,7 +80,11 @@ class SubmissionImportDryRunResult:
 @dataclass(frozen=True)
 class SubmissionImportExecutionResult:
     dry_run: SubmissionImportDryRunResult
+    batch_created: bool
     write_results: tuple
+
+    verification_result: object | None = None
+    verification_error: str | None = None
 
     @property
     def created_count(self) -> int:
@@ -94,15 +102,31 @@ class SubmissionImportExecutionResult:
     def created_answer_value_count(self) -> int:
         return sum(result.answer_value_count for result in self.write_results if result.created)
 
+    @property
+    def verification_succeeded(self) -> bool | None:
+        if not self.batch_created:
+            return None
+
+        if self.verification_error is not None:
+            return False
+
+        if self.verification_result is None:
+            return False
+
+        return self.verification_result.is_valid
 class SubmissionImportOrchestrator:
     def __init__(
-        self,
-        *,
-        context_reader,
-        submission_writer,
+            self,
+            *,
+            context_reader,
+            submission_writer,
+            import_writer=None,
+            import_verifier=None,
     ) -> None:
         self._context_reader = (context_reader)
         self._submission_writer = (submission_writer)
+        self._import_writer = (import_writer)
+        self._import_verifier = (import_verifier)
 
     @staticmethod
     def _optional_text(
@@ -152,6 +176,75 @@ class SubmissionImportOrchestrator:
             batch_id=batch_id,
         )
 
+    @staticmethod
+    def _normalize_respondent_id_for_key(
+            value,
+    ) -> str:
+        if value is None:
+            return ""
+
+        text = str(
+            value
+        ).strip().upper()
+
+        if not text:
+            return ""
+
+        if not text.startswith(
+                "RESP_"
+        ):
+            return text
+
+        body = text[5:]
+
+        identifier, separator, period = (
+            body.rpartition("_")
+        )
+
+        if not separator:
+            return text
+
+        normalized_identifier = "".join(
+            character
+            for character in identifier
+            if character.isalnum()
+        )
+
+        normalized_period = "".join(
+            character
+            for character in period
+            if character.isalnum()
+        )
+
+        return (
+            f"RESP_{normalized_identifier}_"
+            f"{normalized_period}"
+        )
+
+    @classmethod
+    def _submission_natural_key(
+            cls,
+            plan: SubmissionPersistencePlan,
+    ) -> tuple:
+        submission = plan.submission
+
+        respondent_mp_id = (
+            None
+            if submission.respondent_mp_id is None
+            else str(
+                submission.respondent_mp_id
+            ).strip()
+        )
+
+        return (
+            submission.batch_id,
+            submission.relation_id,
+            cls._normalize_respondent_id_for_key(
+                submission.respondent_id
+            ),
+            respondent_mp_id,
+        )
+
     def run_dry_run(
         self,
         *,
@@ -190,17 +283,23 @@ class SubmissionImportOrchestrator:
         first_response = (first_submission.get("response")or {})
 
         questionnaire_code = (self._optional_text(first_response.get("survey_type")) or "SZTFH")
-        context = (self._context_reader.load_context(
+        context = (
+            self._context_reader.load_context(
                 batch_id=batch_id,
                 questionnaire_code=(questionnaire_code),
                 spec_version=(spec_version),
+                allow_missing_batch=True,
             )
         )
         results = []
 
+        results = []
+
+        seen_natural_keys = {}
+
         for index, submission in enumerate(
-            submissions,
-            start=1,
+                submissions,
+                start=1,
         ):
             if not isinstance(
                 submission,
@@ -216,6 +315,7 @@ class SubmissionImportOrchestrator:
                         existing_submission_id=None,
                         is_new=False,
                         error=("submission must be a dict"),
+
                     )
                 )
                 continue
@@ -250,8 +350,54 @@ class SubmissionImportOrchestrator:
                             for (question_id, option_ids,) in (context.option_ids_by_question.items())},
                     )
                 )
+                natural_key = (
+                    self._submission_natural_key(
+                        plan
+                    )
+                )
 
-                preflight = (self._submission_writer.preflight(plan))
+                first_occurrence = (
+                    seen_natural_keys.get(
+                        natural_key
+                    )
+                )
+
+                if first_occurrence is not None:
+                    results.append(
+                        SubmissionImportItemResult(
+                            submission_index=index,
+                            supplier_tax_number=(
+                                supplier_tax_number
+                            ),
+                            requester_tax_number=(
+                                requester_tax_number
+                            ),
+                            relation_id=relation_id,
+                            plan=None,
+                            existing_submission_id=None,
+                            is_new=False,
+                            error=(
+                                "duplicate submission in import; "
+                                "first occurrence: "
+                                f"{first_occurrence}"
+                            ),
+                        )
+                    )
+
+                    continue
+
+                seen_natural_keys[
+                    natural_key
+                ] = index
+
+                if context.batch_exists:
+                    preflight = (self._submission_writer.preflight(plan))
+                    existing_submission_id = (preflight.existing_submission_id)
+                    is_new = preflight.can_insert
+
+                else:
+                    existing_submission_id = None
+                    is_new = True
 
                 results.append(SubmissionImportItemResult(
                         submission_index=index,
@@ -259,8 +405,8 @@ class SubmissionImportOrchestrator:
                         requester_tax_number=(requester_tax_number),
                         relation_id=relation_id,
                         plan=plan,
-                        existing_submission_id=(preflight.existing_submission_id),
-                        is_new=(preflight.can_insert),
+                        existing_submission_id=(existing_submission_id),
+                        is_new=is_new,
                         error=None,
                     )
                 )
@@ -278,14 +424,77 @@ class SubmissionImportOrchestrator:
                     )
                 )
 
-        return (
-            SubmissionImportDryRunResult(
+        return (SubmissionImportDryRunResult(
                 batch_id=batch_id,
                 questionnaire_code=(questionnaire_code),
+                batch_exists=(context.batch_exists),
                 spec_version=spec_version,
-                items=tuple(results),))
+                items=tuple(results),
+            )
+        )
 
     def execute(
+            self,
+            *,
+            payload: dict,
+            batch_id: str,
+    ) -> SubmissionImportExecutionResult:
+        dry_run = self.run_dry_run(
+            payload=payload,
+            batch_id=batch_id,
+        )
+
+
+        if dry_run.error_count:
+            raise ValueError(
+                "submission import contains "
+                f"{dry_run.error_count} error(s); "
+                "database write aborted"
+            )
+
+        plans = [item.plan for item in dry_run.items if item.plan is not None]
+        if len(plans) != dry_run.submission_count:
+            raise RuntimeError("not every submission has a persistence plan")
+        if self._import_writer is None:
+            raise RuntimeError("import_writer is required for execute")
+
+        import_result = (self._import_writer.write(
+                batch_id=dry_run.batch_id,
+                questionnaire_code=(dry_run.questionnaire_code),
+                spec_version=(dry_run.spec_version),
+                plans=plans,
+            )
+        )
+
+        verification_result = None
+        verification_error = None
+
+        if import_result.batch_created:
+            if self._import_verifier is None:
+                verification_error = ("import_verifier is not configured")
+
+            else:
+                try:
+                    verification_result = (self._import_verifier.verify_new_batch(
+                            batch_id=(dry_run.batch_id),
+                            questionnaire_code=(dry_run.questionnaire_code),
+                            spec_version=(dry_run.spec_version),
+                            plans=plans,
+                        )
+                    )
+
+                except Exception as error:
+                    verification_error = str(error)
+
+        return SubmissionImportExecutionResult(
+            dry_run=dry_run,
+            batch_created=(import_result.batch_created),
+            write_results=(import_result.submission_results),
+            verification_result=(verification_result),
+            verification_error=(verification_error),
+        )
+
+    def execute_rollback(
             self,
             *,
             payload: dict,
@@ -315,15 +524,32 @@ class SubmissionImportOrchestrator:
                 "a persistence plan"
             )
 
-        write_results = (
-            self._submission_writer
-            .write_many(
-                plans
+        if self._import_writer is None:
+            raise RuntimeError(
+                "import_writer is required "
+                "for execute"
+            )
+
+        import_result = (
+            self._import_writer.write_rollback(
+                batch_id=dry_run.batch_id,
+                questionnaire_code=(
+                    dry_run.questionnaire_code
+                ),
+                spec_version=(
+                    dry_run.spec_version
+                ),
+                plans=plans,
             )
         )
 
         return SubmissionImportExecutionResult(
             dry_run=dry_run,
-            write_results=write_results,
+            batch_created=(
+                import_result.batch_created
+            ),
+            write_results=(
+                import_result.submission_results
+            ),
         )
 

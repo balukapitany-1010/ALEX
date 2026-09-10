@@ -173,9 +173,7 @@ class MssqlSubmissionWriter:
             connection.close()
     def write_many(
         self,
-        plans: list[
-            SubmissionPersistencePlan
-        ],
+        plans: list[SubmissionPersistencePlan],
     ) -> tuple[
         MssqlSubmissionWriteResult,
         ...
@@ -184,127 +182,29 @@ class MssqlSubmissionWriter:
             plans,
             list,
         ):
-            raise TypeError(
-                "plans must be a list"
-            )
-
+            raise TypeError("plans must be a list")
         if not plans:
             return ()
-
         for plan in plans:
             if not isinstance(
                 plan,
                 SubmissionPersistencePlan,
             ):
-                raise TypeError(
-                    "all plans must be "
-                    "SubmissionPersistencePlan"
-                )
-
-        batch_ids = {
-            plan.submission.batch_id
-            for plan in plans
-        }
-
+                raise TypeError("all plans must be SubmissionPersistencePlan")
+        batch_ids = {plan.submission.batch_id for plan in plans}
         if len(batch_ids) != 1:
-            raise ValueError(
-                "all plans must belong "
-                "to the same batch"
-            )
-
-        batch_id = next(
-            iter(batch_ids)
-        )
-
-        connection = (
-            self._connection_factory.connect()
-        )
-
+            raise ValueError("all plans must belong to the same batch")
+        batch_id = next(iter(batch_ids))
+        connection = (self._connection_factory.connect())
         try:
             cursor = connection.cursor()
-
-            self._ensure_batch_exists(
+            results = self.write_many_on_cursor(
                 cursor,
-                batch_id,
+                plans,
             )
-
-            results = []
-
-            for plan in plans:
-                existing_submission_id = (
-                    self._find_existing_submission_id_for_write(
-                        cursor,
-                        plan,
-                    )
-                )
-
-                if (
-                    existing_submission_id
-                    is not None
-                ):
-                    results.append(
-                        MssqlSubmissionWriteResult(
-                            submission_id=(
-                                existing_submission_id
-                            ),
-                            created=False,
-                            answer_count=0,
-                            answer_value_count=0,
-                        )
-                    )
-
-                    continue
-
-                submission_id = (
-                    self._insert_submission(
-                        cursor,
-                        plan,
-                    )
-                )
-
-                answer_count = 0
-                answer_value_count = 0
-
-                for answer in plan.answers:
-                    submission_answer_id = (
-                        self._insert_submission_answer(
-                            cursor,
-                            submission_id,
-                            answer.question_id,
-                        )
-                    )
-
-                    answer_count += 1
-
-                    for value in answer.values:
-                        self._insert_answer_value(
-                            cursor,
-                            submission_answer_id,
-                            value,
-                        )
-
-                        answer_value_count += 1
-
-                results.append(
-                    MssqlSubmissionWriteResult(
-                        submission_id=(
-                            submission_id
-                        ),
-                        created=True,
-                        answer_count=(
-                            answer_count
-                        ),
-                        answer_value_count=(
-                            answer_value_count
-                        ),
-                    )
-                )
-
             connection.commit()
 
-            return tuple(
-                results
-            )
+            return results
 
         except Exception:
             connection.rollback()
@@ -312,6 +212,104 @@ class MssqlSubmissionWriter:
 
         finally:
             connection.close()
+
+    def write_many_on_cursor(
+            self,
+            cursor,
+            plans: list[
+                SubmissionPersistencePlan
+            ],
+    ) -> tuple[
+        MssqlSubmissionWriteResult,
+        ...
+    ]:
+        if not isinstance(
+                plans,
+                list,
+        ):
+            raise TypeError("plans must be a list")
+
+        if not plans:
+            return ()
+
+        for plan in plans:
+            if not isinstance(
+                    plan,
+                    SubmissionPersistencePlan,
+            ):
+                raise TypeError("all plans must be SubmissionPersistencePlan")
+
+        batch_ids = {plan.submission.batch_id for plan in plans}
+
+        if len(batch_ids) != 1:
+            raise ValueError("all plans must belong to the same batch")
+
+        batch_id = next(iter(batch_ids) )
+
+        self._ensure_batch_exists(
+            cursor,
+            batch_id,
+        )
+
+        results = []
+
+        for plan in plans:
+            existing_submission_id = (self._find_existing_submission_id_for_write(
+                    cursor,
+                    plan,
+                )
+            )
+
+            if existing_submission_id is not None:
+                results.append(MssqlSubmissionWriteResult(
+                        submission_id=(existing_submission_id),
+                        created=False,
+                        answer_count=0,
+                        answer_value_count=0,
+                    )
+                )
+
+                continue
+
+            submission_id = (
+                self._insert_submission(
+                    cursor,
+                    plan,
+                )
+            )
+
+            answer_count = 0
+            answer_value_count = 0
+
+            for answer in plan.answers:
+                submission_answer_id = (
+                    self._insert_submission_answer(
+                        cursor,
+                        submission_id,
+                        answer.question_id,
+                    )
+                )
+
+                answer_count += 1
+
+                for value in answer.values:
+                    self._insert_answer_value(
+                        cursor,
+                        submission_answer_id,
+                        value,
+                    )
+
+                    answer_value_count += 1
+
+            results.append(MssqlSubmissionWriteResult(
+                    submission_id=(submission_id),
+                    created=True,
+                    answer_count=(answer_count),
+                    answer_value_count=(answer_value_count),
+                )
+            )
+
+        return tuple(results)
 
     @staticmethod
     def _ensure_batch_exists(
@@ -332,7 +330,101 @@ class MssqlSubmissionWriter:
             raise ValueError("SUBMISSION_BATCH does not exist: " f"{batch_id}")
 
     @staticmethod
+    def _normalize_respondent_id_for_match(
+            value,
+    ) -> str:
+        if value is None:
+            return ""
+
+        text = str(
+            value
+        ).strip().upper()
+
+        if not text:
+            return ""
+
+        # Csak az ALEX/legacy generált RESP_ azonosítókat
+        # normalizáljuk agresszíven.
+        # Külső, saját respondent_id-ket nem alakítunk át.
+        if not text.startswith(
+                "RESP_"
+        ):
+            return text
+
+        body = text[5:]
+
+        identifier, separator, period = (
+            body.rpartition("_")
+        )
+
+        if not separator:
+            return text
+
+        normalized_identifier = "".join(
+            character
+            for character in identifier
+            if character.isalnum()
+        )
+
+        normalized_period = "".join(
+            character
+            for character in period
+            if character.isalnum()
+        )
+
+        return (
+            f"RESP_{normalized_identifier}_"
+            f"{normalized_period}"
+        )
+
+    @classmethod
+    def _find_matching_submission_id(
+            cls,
+            cursor,
+            expected_respondent_id,
+    ) -> int | None:
+        expected = (
+            cls._normalize_respondent_id_for_match(
+                expected_respondent_id
+            )
+        )
+
+        matching_submission_ids = []
+
+        while True:
+            row = cursor.fetchone()
+
+            if row is None:
+                break
+
+            actual = (
+                cls._normalize_respondent_id_for_match(
+                    row[1]
+                )
+            )
+
+            if actual == expected:
+                matching_submission_ids.append(
+                    int(row[0])
+                )
+
+        if not matching_submission_ids:
+            return None
+
+        if len(
+                matching_submission_ids
+        ) > 1:
+            raise RuntimeError(
+                "multiple matching submissions "
+                "already exist: "
+                f"{matching_submission_ids}"
+            )
+
+        return matching_submission_ids[0]
+
+    @classmethod
     def _find_existing_submission_id_read_only(
+            cls,
             cursor,
             plan: SubmissionPersistencePlan,
     ) -> int | None:
@@ -341,11 +433,11 @@ class MssqlSubmissionWriter:
         cursor.execute(
             """
             SELECT
-                submission_id
+                submission_id,
+                respondent_id
             FROM dbo.SUBMISSION
             WHERE batch_id = ?
               AND relation_id = ?
-              AND respondent_id = ?
               AND (
                     respondent_mp_id = ?
                     OR (
@@ -357,45 +449,34 @@ class MssqlSubmissionWriter:
             """,
             submission.batch_id,
             submission.relation_id,
+            submission.respondent_mp_id,
+            submission.respondent_mp_id,
+        )
+
+        return cls._find_matching_submission_id(
+            cursor,
             submission.respondent_id,
-            submission.respondent_mp_id,
-            submission.respondent_mp_id,
         )
 
-        first_row = cursor.fetchone()
-
-        if first_row is None:
-            return None
-
-        second_row = cursor.fetchone()
-
-        if second_row is not None:
-            raise RuntimeError(
-                "multiple matching submissions "
-                "already exist"
-            )
-
-        return int(
-            first_row[0]
-        )
-
-    @staticmethod
+    @classmethod
     def _find_existing_submission_id_for_write(
+            cls,
             cursor,
             plan: SubmissionPersistencePlan,
     ) -> int | None:
         submission = plan.submission
+
         cursor.execute(
             """
             SELECT
-                submission_id
+                submission_id,
+                respondent_id
             FROM dbo.SUBMISSION WITH (
                 UPDLOCK,
                 HOLDLOCK
             )
             WHERE batch_id = ?
               AND relation_id = ?
-              AND respondent_id = ?
               AND (
                     respondent_mp_id = ?
                     OR (
@@ -407,22 +488,14 @@ class MssqlSubmissionWriter:
             """,
             submission.batch_id,
             submission.relation_id,
-            submission.respondent_id,
             submission.respondent_mp_id,
             submission.respondent_mp_id,
         )
-        first_row = cursor.fetchone()
-        if first_row is None:
-            return None
-        second_row = cursor.fetchone()
-        if second_row is not None:
-            raise RuntimeError(
-                "multiple matching submissions "
-                "already exist"
-            )
 
-        return int(first_row[0])
-
+        return cls._find_matching_submission_id(
+            cursor,
+            submission.respondent_id,
+        )
     @staticmethod
     def _insert_submission(
         cursor,

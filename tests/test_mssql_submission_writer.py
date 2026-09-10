@@ -13,8 +13,10 @@ class FakeCursor:
         *,
         batch_exists=True,
         existing_submission_id=None,
+        existing_respondent_id=("RESP_11102481207_2024"),
         fail_on_answer_value=False,
     ):
+        self.existing_respondent_id = (existing_respondent_id)
         self.batch_exists = batch_exists
         self.existing_submission_id = (existing_submission_id)
         self.fail_on_answer_value = (fail_on_answer_value)
@@ -36,6 +38,29 @@ class FakeCursor:
                 params,
             )
         )
+        if (
+                "SELECT" in normalized_sql
+                and "submission_id" in normalized_sql
+                and "respondent_id" in normalized_sql
+                and "FROM dbo.SUBMISSION" in normalized_sql
+        ):
+            if (
+                    self.existing_submission_id
+                    is None
+            ):
+                self._rows = []
+
+            else:
+                self._rows = [
+                    (
+                        self.existing_submission_id,
+                        self.existing_respondent_id,
+                    )
+                ]
+
+            self._row_index = 0
+
+            return self
 
         if (
             "FROM dbo.SUBMISSION_BATCH" in normalized_sql
@@ -55,7 +80,10 @@ class FakeCursor:
                 self._rows = []
             else:
                 self._rows = [
-                    (self.existing_submission_id, )
+                    (
+                        self.existing_submission_id,
+                        self.existing_respondent_id,
+                    )
                 ]
 
 
@@ -520,3 +548,70 @@ def test_write_uses_duplicate_prevention_locks():
 
     assert "UPDLOCK" in executed_sql
     assert "HOLDLOCK" in executed_sql
+
+def test_preflight_matches_legacy_formatted_respondent_id():
+    cursor = FakeCursor(
+        existing_submission_id=653,
+        existing_respondent_id=(
+            "RESP_CHE\u2011109446354MWST_NOPERIOD"
+        ),
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    plan = create_plan()
+
+    submission = plan.submission
+
+    normalized_plan = (
+        SubmissionPersistencePlan(
+            submission=type(submission)(
+                batch_id=(
+                    submission.batch_id
+                ),
+                relation_id=(
+                    submission.relation_id
+                ),
+                external_supplier_key=(
+                    "SUP_CHE109446354MWST"
+                ),
+                respondent_id=(
+                    "RESP_CHE109446354MWST_NOPERIOD"
+                ),
+                respondent_mp_id=None,
+                org_size=(
+                    submission.org_size
+                ),
+                submitted_at=(
+                    submission.submitted_at
+                ),
+                status=(
+                    submission.status
+                ),
+                raw_payload=(
+                    submission.raw_payload
+                ),
+            ),
+            answers=plan.answers,
+            skipped_question_ids=(
+                plan.skipped_question_ids
+            ),
+        )
+    )
+
+    result = writer.preflight(
+        normalized_plan
+    )
+
+    assert (
+        result.existing_submission_id
+        == 653
+    )

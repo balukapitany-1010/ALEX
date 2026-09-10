@@ -6,6 +6,7 @@ class SubmissionImportContext:
     questionnaire_code: str
     spec_version: str
     batch_id: str
+    batch_exists: bool
 
     questionnaire_question_ids: frozenset[str]
 
@@ -47,6 +48,7 @@ class MssqlSubmissionImportContextReader:
         batch_id: str,
         questionnaire_code: str,
         spec_version: str,
+        allow_missing_batch: bool = False,
     ) -> SubmissionImportContext:
         batch_id = self._optional_text(batch_id)
         questionnaire_code = (self._optional_text(questionnaire_code))
@@ -55,10 +57,7 @@ class MssqlSubmissionImportContextReader:
             raise ValueError("batch_id cannot be empty")
 
         if questionnaire_code is None:
-            raise ValueError(
-                "questionnaire_code "
-                "cannot be empty"
-            )
+            raise ValueError("questionnaire_code cannot be empty")
 
         if spec_version is None:
             raise ValueError("spec_version cannot be empty")
@@ -78,20 +77,42 @@ class MssqlSubmissionImportContextReader:
             )
             batch_row = cursor.fetchone()
             if batch_row is None:
-                raise ValueError(
-                    "SUBMISSION_BATCH "
-                    f"does not exist: {batch_id}"
-                )
+                if not allow_missing_batch:
+                    raise ValueError(
+                        "SUBMISSION_BATCH "
+                        f"does not exist: {batch_id}"
+                    )
 
-            actual_questionnaire_code = (str(batch_row[0]).strip())
-            actual_spec_version = (str(batch_row[1]).strip())
+                batch_exists = False
 
-            if (
-                actual_questionnaire_code != questionnaire_code or actual_spec_version != spec_version
-            ):
+            else:
+                batch_exists = True
+
+                actual_questionnaire_code = str(batch_row[0]).strip()
+                actual_spec_version = str(batch_row[1]).strip()
+
+                if (
+                        actual_questionnaire_code != questionnaire_code or actual_spec_version != spec_version
+                ):
+                    raise ValueError("batch questionnaire/version does not match import")
+
+            cursor.execute(
+                """
+                SELECT
+                    1
+                FROM dbo.QUESTIONNAIRE
+                WHERE questionnaire_code = ?
+                  AND spec_version = ?
+                """,
+                questionnaire_code,
+                spec_version,
+            )
+
+            if cursor.fetchone() is None:
                 raise ValueError(
-                    "batch questionnaire/version "
-                    "does not match import"
+                    "QUESTIONNAIRE does not exist: "
+                    f"{questionnaire_code} "
+                    f"{spec_version}"
                 )
 
             cursor.execute(
@@ -105,6 +126,7 @@ class MssqlSubmissionImportContextReader:
                 questionnaire_code,
                 spec_version,
             )
+
             questionnaire_question_ids = (frozenset(str(row[0]).strip() for row in cursor.fetchall()))
             cursor.execute(
                 """
@@ -135,13 +157,28 @@ class MssqlSubmissionImportContextReader:
                     option_ids,
                 ) in mutable_options.items()
             }
+            if not questionnaire_question_ids:
+                raise ValueError(
+                    "QUESTIONNAIRE has no linked questions: "
+                    f"{questionnaire_code} "
+                    f"{spec_version}"
+                )
 
             return SubmissionImportContext(
-                questionnaire_code=(questionnaire_code),
-                spec_version=(spec_version),
+                questionnaire_code=(
+                    questionnaire_code
+                ),
+                spec_version=(
+                    spec_version
+                ),
                 batch_id=batch_id,
-                questionnaire_question_ids=(questionnaire_question_ids),
-                option_ids_by_question=(option_ids_by_question),
+                batch_exists=batch_exists,
+                questionnaire_question_ids=(
+                    questionnaire_question_ids
+                ),
+                option_ids_by_question=(
+                    option_ids_by_question
+                ),
             )
         finally:
             connection.close()
