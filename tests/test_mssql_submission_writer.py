@@ -15,7 +15,15 @@ class FakeCursor:
         existing_submission_id=None,
         existing_respondent_id=("RESP_11102481207_2024"),
         fail_on_answer_value=False,
+        supplement_submission_exists=True,
+        existing_question_ids=None,
+        supplement_candidate_rows=None,
+        supplement_db_answer_rows=None,
     ):
+        self.supplement_candidate_rows = list(supplement_candidate_rows or ())
+        self.supplement_db_answer_rows = list(supplement_db_answer_rows or ())
+        self.supplement_submission_exists = (supplement_submission_exists)
+        self.existing_question_ids = set(existing_question_ids or ())
         self.existing_respondent_id = (existing_respondent_id)
         self.batch_exists = batch_exists
         self.existing_submission_id = (existing_submission_id)
@@ -31,7 +39,6 @@ class FakeCursor:
         *params,
     ):
         normalized_sql = " ".join(sql.split())
-
         self.executed.append(
             (
                 normalized_sql,
@@ -39,14 +46,55 @@ class FakeCursor:
             )
         )
         if (
-                "SELECT" in normalized_sql
-                and "submission_id" in normalized_sql
-                and "respondent_id" in normalized_sql
-                and "FROM dbo.SUBMISSION" in normalized_sql
+            "SELECT submission_id, respondent_id, "
+            "external_supplier_key, respondent_mp_id, "
+            "submitted_at"
+            in normalized_sql
+            and "FROM dbo.SUBMISSION"
+            in normalized_sql
+            and "WHERE batch_id = ?"
+            in normalized_sql
+            and "relation_id = ?"
+            in normalized_sql
         ):
-            if (
-                    self.existing_submission_id
-                    is None
+            self._rows = list(
+                self.supplement_candidate_rows
+            )
+
+            return self
+
+        if (
+            "SELECT sa.question_id, "
+            "av.field_type, "
+            "av.option_id, "
+            "av.selected, "
+            "av.number_value, "
+            "av.text_value"
+            in normalized_sql
+            and "FROM dbo.SUBMISSION_ANSWER AS sa"
+            in normalized_sql
+        ):
+            self._rows = list(
+                self.supplement_db_answer_rows
+            )
+
+            return self
+        if ("SELECT submission_id" in normalized_sql and "FROM dbo.SUBMISSION " in normalized_sql and "WHERE submission_id = ?" in normalized_sql and "respondent_id" not in normalized_sql
+        ):
+            if self.supplement_submission_exists:
+                self._rows = [( params[0],)]
+            else:
+                self._rows = []
+
+            return self
+
+        if ("SELECT question_id" in normalized_sql and "FROM dbo.SUBMISSION_ANSWER" in normalized_sql
+        ):
+            self._rows = [(question_id,) for question_id in sorted(self.existing_question_ids)]
+            return self
+        if ("SELECT" in normalized_sql and "submission_id" in normalized_sql and "respondent_id" in normalized_sql and "FROM dbo.SUBMISSION" in normalized_sql
+        ):
+            if (self.existing_submission_id is None
             ):
                 self._rows = []
 
@@ -62,16 +110,14 @@ class FakeCursor:
 
             return self
 
-        if (
-            "FROM dbo.SUBMISSION_BATCH" in normalized_sql
+        if ("FROM dbo.SUBMISSION_BATCH" in normalized_sql
         ):
             if self.batch_exists:
                 self._rows = [("BATCH_TEST",)]
             else:
                 self._rows = []
 
-        elif (
-            "FROM dbo.SUBMISSION" in normalized_sql and "SELECT" in normalized_sql
+        elif ("FROM dbo.SUBMISSION" in normalized_sql and "SELECT" in normalized_sql
         ):
             if (
                 self.existing_submission_id
@@ -86,41 +132,20 @@ class FakeCursor:
                     )
                 ]
 
-
-        elif (
-
-                "INSERT INTO dbo.SUBMISSION "
-
-                in normalized_sql
+        elif ("INSERT INTO dbo.SUBMISSION " in normalized_sql
 
         ):
-
             self._next_submission_id += 1
-
-            self._rows = [
-
-                (
-
-                    self._next_submission_id,
-
-                )
+            self._rows = [(self._next_submission_id,)
 
             ]
-        elif (
-            "INSERT INTO "
+        elif ("INSERT INTO "
             "dbo.SUBMISSION_ANSWER"
             in normalized_sql
         ):
             self._next_answer_id += 1
-
-            self._rows = [
-                (
-                    self._next_answer_id,
-                )
-            ]
-
-        elif (
-            "INSERT INTO dbo.ANSWER_VALUE" in normalized_sql
+            self._rows = [( self._next_answer_id,)]
+        elif ("INSERT INTO dbo.ANSWER_VALUE" in normalized_sql
         ):
             if self.fail_on_answer_value:
                 raise RuntimeError("simulated database error")
@@ -137,6 +162,12 @@ class FakeCursor:
             return None
 
         return self._rows.pop(0)
+    def fetchall(self):
+        rows = list(self._rows)
+
+        self._rows = []
+
+        return rows
 
 
 class FakeConnection:
@@ -207,6 +238,36 @@ def create_plan():
     return SubmissionPersistencePlan(
         submission=submission,
         answers=answers,
+        skipped_question_ids=(),
+    )
+def create_supplement_plan():
+    base_plan = create_plan()
+
+    missing_value = (
+        AnswerValuePersistenceData(
+            field_type="text",
+            option_id=None,
+            selected=None,
+            number_value=None,
+            text_value="supplement",
+        )
+    )
+
+    missing_answer = (
+        SubmissionAnswerPersistenceData(
+            question_id="034FEA08_DETAIL1",
+            values=(
+                missing_value,
+            ),
+        )
+    )
+
+    return SubmissionPersistencePlan(
+        submission=base_plan.submission,
+        answers=(
+            *base_plan.answers,
+            missing_answer,
+        ),
         skipped_question_ids=(),
     )
 
@@ -325,7 +386,6 @@ def test_preflight_rejects_missing_batch():
     cursor = FakeCursor(batch_exists=False)
     connection = FakeConnection(cursor)
     writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
-
     with pytest.raises(
         ValueError,
         match="SUBMISSION_BATCH does not exist",
@@ -334,7 +394,6 @@ def test_preflight_rejects_missing_batch():
     assert connection.committed is False
     assert connection.rolled_back is True
     assert connection.closed is True
-
     assert not any("INSERT INTO" in sql for (
             sql,
             params,
@@ -342,19 +401,9 @@ def test_preflight_rejects_missing_batch():
 
 def test_write_many_commits_complete_batch_once():
     cursor = FakeCursor()
-
-    connection = FakeConnection(
-        cursor
-    )
-
-    writer = MssqlSubmissionWriter(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
     first_plan = create_plan()
-
     second_submission = (
         SubmissionPersistenceData(
             batch_id="BATCH_TEST",
@@ -373,8 +422,7 @@ def test_write_many_commits_complete_batch_once():
         )
     )
 
-    second_plan = (
-        SubmissionPersistencePlan(
+    second_plan = (SubmissionPersistencePlan(
             submission=second_submission,
             answers=first_plan.answers,
             skipped_question_ids=(),
@@ -389,28 +437,16 @@ def test_write_many_commits_complete_batch_once():
     )
 
     assert len(results) == 2
-
     assert results[0].created is True
     assert results[1].created is True
-
-    assert (
-        results[0].submission_id
-        == 1001
-    )
-
-    assert (
-        results[1].submission_id
-        == 1002
-    )
-
+    assert (results[0].submission_id == 1001)
+    assert (results[1].submission_id== 1002)
     assert connection.committed is True
     assert connection.rolled_back is False
     assert connection.closed is True
 
-
 def test_write_many_rejects_multiple_batches():
     first_plan = create_plan()
-
     second_submission = (
         SubmissionPersistenceData(
             batch_id="OTHER_BATCH",
@@ -425,32 +461,20 @@ def test_write_many_rejects_multiple_batches():
         )
     )
 
-    second_plan = (
-        SubmissionPersistencePlan(
+    second_plan = (SubmissionPersistencePlan(
             submission=second_submission,
             answers=(),
             skipped_question_ids=(),
         )
     )
-
     cursor = FakeCursor()
-
-    connection = FakeConnection(
-        cursor
-    )
-
-    writer = MssqlSubmissionWriter(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
     with pytest.raises(
         ValueError,
         match="same batch",
     ):
-        writer.write_many(
-            [
+        writer.write_many([
                 first_plan,
                 second_plan,
             ]
@@ -460,20 +484,9 @@ def test_write_many_rejects_multiple_batches():
 
 
 def test_write_many_rolls_back_complete_batch_on_error():
-    cursor = FakeCursor(
-        fail_on_answer_value=True
-    )
-
-    connection = FakeConnection(
-        cursor
-    )
-
-    writer = MssqlSubmissionWriter(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
+    cursor = FakeCursor(fail_on_answer_value=True)
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
     with pytest.raises(
         RuntimeError,
         match="simulated database error",
@@ -489,24 +502,10 @@ def test_write_many_rolls_back_complete_batch_on_error():
     assert connection.closed is True
 
 def test_preflight_does_not_use_update_locks():
-    cursor = FakeCursor(
-        existing_submission_id=323
-    )
-
-    connection = FakeConnection(
-        cursor
-    )
-
-    writer = MssqlSubmissionWriter(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
-    writer.preflight(
-        create_plan()
-    )
-
+    cursor = FakeCursor(existing_submission_id=323)
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+    writer.preflight(create_plan())
     executed_sql = "\n".join(
         sql
         for (
@@ -514,47 +513,218 @@ def test_preflight_does_not_use_update_locks():
             params,
         ) in cursor.executed
     )
-
     assert "UPDLOCK" not in executed_sql
     assert "HOLDLOCK" not in executed_sql
 
-
 def test_write_uses_duplicate_prevention_locks():
-    cursor = FakeCursor(
-        existing_submission_id=323
-    )
-
-    connection = FakeConnection(
-        cursor
-    )
-
-    writer = MssqlSubmissionWriter(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
-    writer.write(
-        create_plan()
-    )
-
-    executed_sql = "\n".join(
-        sql
-        for (
+    cursor = FakeCursor(existing_submission_id=323)
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+    writer.write(create_plan())
+    executed_sql = "\n".join(sql for (
             sql,
             params,
         ) in cursor.executed
     )
-
     assert "UPDLOCK" in executed_sql
     assert "HOLDLOCK" in executed_sql
 
 def test_preflight_matches_legacy_formatted_respondent_id():
     cursor = FakeCursor(
         existing_submission_id=653,
-        existing_respondent_id=(
-            "RESP_CHE\u2011109446354MWST_NOPERIOD"
-        ),
+        existing_respondent_id=("RESP_CHE\u2011109446354MWST_NOPERIOD"),
+    )
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+    plan = create_plan()
+    submission = plan.submission
+    normalized_plan = (SubmissionPersistencePlan(
+            submission=type(submission)(
+                batch_id=(submission.batch_id),
+                relation_id=(submission.relation_id),
+                external_supplier_key=("SUP_CHE109446354MWST"),
+                respondent_id=("RESP_CHE109446354MWST_NOPERIOD"),
+                respondent_mp_id=None,
+                org_size=(submission.org_size),
+                submitted_at=(submission.submitted_at),
+                status=(submission.status),
+                raw_payload=(submission.raw_payload),),
+            answers=plan.answers,
+            skipped_question_ids=(plan.skipped_question_ids),
+        )
+    )
+    result = writer.preflight(normalized_plan)
+    assert (result.existing_submission_id == 653)
+
+def test_supplement_answers_inserts_child_rows_only():
+    cursor = FakeCursor()
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+    plan = create_plan()
+
+    result = writer.supplement_answers(
+        323,
+        plan.answers,
+    )
+    assert result.submission_id == 323
+    assert result.answer_count == 1
+    assert result.answer_value_count == 1
+    assert connection.committed is True
+    assert connection.rolled_back is False
+    assert connection.closed is True
+
+    sql_statements = [
+        sql
+        for (
+            sql,
+            params,
+        ) in cursor.executed
+    ]
+    assert not any("INSERT INTO dbo.SUBMISSION " in sql for sql in sql_statements)
+    assert any("INSERT INTO dbo.SUBMISSION_ANSWER" in sql for sql in sql_statements)
+    assert any("INSERT INTO dbo.ANSWER_VALUE" in sql for sql in sql_statements)
+
+def test_supplement_answers_rejects_existing_question():
+    cursor = FakeCursor(existing_question_ids={"0364FD79",})
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+
+    with pytest.raises(
+        ValueError,
+        match="SUBMISSION_ANSWER already exists",
+    ):
+        writer.supplement_answers(
+            323,
+            create_plan().answers,
+        )
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+    assert not any(
+        "INSERT INTO dbo.SUBMISSION_ANSWER"
+        in sql
+        for (
+            sql,
+            params,
+        ) in cursor.executed
+    )
+
+
+def test_supplement_answers_rejects_missing_submission():
+    cursor = FakeCursor(supplement_submission_exists=False)
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+    with pytest.raises(
+        ValueError,
+        match="SUBMISSION does not exist",
+    ):
+        writer.supplement_answers(
+            323,
+            create_plan().answers,
+        )
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+
+def test_supplement_answers_rolls_back_on_value_error():
+    cursor = FakeCursor(fail_on_answer_value=True)
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+    with pytest.raises(
+        RuntimeError,
+        match="simulated database error",
+    ):
+        writer.supplement_answers(
+            323,
+            create_plan().answers,
+        )
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+def test_supplement_answers_rejects_duplicate_question_ids():
+    cursor = FakeCursor()
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+    answer = create_plan().answers[0]
+
+    duplicate_answers = (
+        answer,
+        answer,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="duplicate question_id in supplement",
+    ):
+        writer.supplement_answers(
+            323,
+            duplicate_answers,
+        )
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+    assert not any(
+        "INSERT INTO dbo.SUBMISSION_ANSWER"
+        in sql
+        for (
+            sql,
+            params,
+        ) in cursor.executed
+    )
+
+
+def test_supplement_answers_uses_update_locks():
+    cursor = FakeCursor()
+    connection = FakeConnection(cursor)
+    writer = MssqlSubmissionWriter(FakeConnectionFactory(connection))
+
+    writer.supplement_answers(
+        323,
+        create_plan().answers,
+    )
+    sql_statements = [
+        sql
+        for (
+            sql,
+            params,
+        ) in cursor.executed
+    ]
+    submission_select = next(sql for sql in sql_statements if ("FROM dbo.SUBMISSION "in sql and "WHERE submission_id = ?" in sql))
+    answer_select = next(sql for sql in sql_statements if ("FROM dbo.SUBMISSION_ANSWER" in sql and "SELECT question_id" in sql))
+
+    assert "UPDLOCK" in submission_select
+    assert "HOLDLOCK" in submission_select
+    assert "UPDLOCK" in answer_select
+    assert "HOLDLOCK" in answer_select
+
+def test_preflight_supplement_detects_missing_answer():
+    cursor = FakeCursor(
+        supplement_candidate_rows=[
+            (
+                323,
+                "RESP_11102481207_NOPERIOD",
+                "SUP_11102481207",
+                None,
+                None,
+            )
+        ],
+        supplement_db_answer_rows=[
+            (
+                "0364FD79",
+                "number",
+                "0364FD79_1",
+                None,
+                Decimal("53.9500"),
+                None,
+            )
+        ],
     )
 
     connection = FakeConnection(
@@ -567,51 +737,171 @@ def test_preflight_matches_legacy_formatted_respondent_id():
         )
     )
 
-    plan = create_plan()
-
-    submission = plan.submission
-
-    normalized_plan = (
-        SubmissionPersistencePlan(
-            submission=type(submission)(
-                batch_id=(
-                    submission.batch_id
-                ),
-                relation_id=(
-                    submission.relation_id
-                ),
-                external_supplier_key=(
-                    "SUP_CHE109446354MWST"
-                ),
-                respondent_id=(
-                    "RESP_CHE109446354MWST_NOPERIOD"
-                ),
-                respondent_mp_id=None,
-                org_size=(
-                    submission.org_size
-                ),
-                submitted_at=(
-                    submission.submitted_at
-                ),
-                status=(
-                    submission.status
-                ),
-                raw_payload=(
-                    submission.raw_payload
-                ),
-            ),
-            answers=plan.answers,
-            skipped_question_ids=(
-                plan.skipped_question_ids
-            ),
-        )
-    )
-
-    result = writer.preflight(
-        normalized_plan
+    result = writer.preflight_supplement(
+        create_supplement_plan()
     )
 
     assert (
         result.existing_submission_id
-        == 653
+        == 323
     )
+
+    assert result.is_supplement is True
+    assert result.answer_count == 1
+    assert result.answer_value_count == 1
+
+    assert (
+        result.supplement_answers[0]
+        .question_id
+        == "034FEA08_DETAIL1"
+    )
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+    assert not any(
+        "INSERT INTO"
+        in sql
+        for (
+            sql,
+            params,
+        ) in cursor.executed
+    )
+
+
+def test_preflight_supplement_returns_none_without_legacy_candidate():
+    cursor = FakeCursor(
+        supplement_candidate_rows=[],
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    result = writer.preflight_supplement(
+        create_supplement_plan()
+    )
+
+    assert (
+        result.existing_submission_id
+        is None
+    )
+
+    assert result.is_supplement is False
+    assert result.answer_count == 0
+    assert result.answer_value_count == 0
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+
+def test_preflight_supplement_rejects_changed_existing_answer():
+    cursor = FakeCursor(
+        supplement_candidate_rows=[
+            (
+                323,
+                "RESP_11102481207_NOPERIOD",
+                "SUP_11102481207",
+                None,
+                None,
+            )
+        ],
+        supplement_db_answer_rows=[
+            (
+                "0364FD79",
+                "number",
+                "0364FD79_1",
+                None,
+                Decimal("99.0000"),
+                None,
+            )
+        ],
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "legacy submission answer "
+            "differs from plan"
+        ),
+    ):
+        writer.preflight_supplement(
+            create_supplement_plan()
+        )
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+    assert not any(
+        "INSERT INTO"
+        in sql
+        for (
+            sql,
+            params,
+        ) in cursor.executed
+    )
+
+
+def test_preflight_supplement_rejects_multiple_legacy_candidates():
+    cursor = FakeCursor(
+        supplement_candidate_rows=[
+            (
+                323,
+                "RESP_11102481207_NOPERIOD",
+                "SUP_11102481207",
+                None,
+                None,
+            ),
+            (
+                324,
+                "RESP_11102481207_NOPERIOD",
+                "SUP_11102481207",
+                None,
+                None,
+            ),
+        ],
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    writer = MssqlSubmissionWriter(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "multiple legacy supplement "
+            "submission candidates"
+        ),
+    ):
+        writer.preflight_supplement(
+            create_supplement_plan()
+        )
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+    assert connection.closed is True

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from alex.esg.services.submission_answer_persistence_mapper import SubmissionAnswerPersistenceData
 from alex.esg.services.submission_persistence_plan import (
     SubmissionPersistencePlan,
     SubmissionPersistencePlanner,
@@ -15,6 +16,10 @@ class SubmissionImportItemResult:
     existing_submission_id: int | None
     is_new: bool
     error: str | None
+    supplement_answers: tuple[
+        SubmissionAnswerPersistenceData,
+        ...
+    ] = ()
 
     @property
     def is_valid(self) -> bool:
@@ -23,6 +28,23 @@ class SubmissionImportItemResult:
     @property
     def exists(self) -> bool:
         return (self.existing_submission_id is not None)
+    @property
+    def is_supplement(self) -> bool:
+        return (self.is_valid and self.existing_submission_id is not None and bool(self.supplement_answers))
+
+    @property
+    def supplement_answer_count(self) -> int:
+        return len(self.supplement_answers)
+
+    @property
+    def supplement_answer_value_count(
+        self,
+    ) -> int:
+        return sum(
+            len(answer.values)
+            for answer
+            in self.supplement_answers
+        )
 
     @property
     def answer_count(self) -> int:
@@ -59,7 +81,21 @@ class SubmissionImportDryRunResult:
 
     @property
     def existing_count(self) -> int:
-        return sum(1 for item in self.items if (item.is_valid and item.exists))
+        return sum(1 for item in self.items if (item.is_valid and item.exists and not item.is_supplement))
+
+    @property
+    def supplement_count(self) -> int:
+        return sum(1 for item in self.items if item.is_supplement)
+
+    @property
+    def supplement_answer_count(self) -> int:
+        return sum(item.supplement_answer_count for item in self.items if item.is_supplement)
+
+    @property
+    def supplement_answer_value_count(
+        self,
+    ) -> int:
+        return sum(item.supplement_answer_value_count for item in self.items if item.is_supplement)
 
     @property
     def new_count(self) -> int:
@@ -114,6 +150,45 @@ class SubmissionImportExecutionResult:
             return False
 
         return self.verification_result.is_valid
+
+@dataclass(frozen=True)
+class SubmissionSupplementExecutionResult:
+    dry_run: SubmissionImportDryRunResult
+    write_result: object
+
+    verification_result: object | None = None
+    verification_error: str | None = None
+
+    @property
+    def supplement_submission_count(
+        self,
+    ) -> int:
+        return (self.write_result.supplement_submission_count)
+
+    @property
+    def created_answer_count(
+        self,
+    ) -> int:
+        return self.write_result.answer_count
+
+    @property
+    def created_answer_value_count(
+        self,
+    ) -> int:
+        return (self.write_result.answer_value_count)
+
+    @property
+    def verification_succeeded(
+        self,
+    ) -> bool:
+        if self.verification_error is not None:
+            return False
+
+        if self.verification_result is None:
+            return False
+
+        return (self.verification_result.is_valid)
+
 class SubmissionImportOrchestrator:
     def __init__(
             self,
@@ -281,7 +356,6 @@ class SubmissionImportOrchestrator:
             raise ValueError("first submission must be a dict")
 
         first_response = (first_submission.get("response")or {})
-
         questionnaire_code = (self._optional_text(first_response.get("survey_type")) or "SZTFH")
         context = (
             self._context_reader.load_context(
@@ -292,7 +366,6 @@ class SubmissionImportOrchestrator:
             )
         )
         results = []
-
         results = []
 
         seen_natural_keys = {}
@@ -305,8 +378,7 @@ class SubmissionImportOrchestrator:
                 submission,
                 dict,
             ):
-                results.append(
-                    SubmissionImportItemResult(
+                results.append(SubmissionImportItemResult(
                         submission_index=index,
                         supplier_tax_number=None,
                         requester_tax_number=None,
@@ -315,7 +387,6 @@ class SubmissionImportOrchestrator:
                         existing_submission_id=None,
                         is_new=False,
                         error=("submission must be a dict"),
-
                     )
                 )
                 continue
@@ -340,8 +411,7 @@ class SubmissionImportOrchestrator:
                     )
                 )
 
-                plan = (
-                    SubmissionPersistencePlanner.create_plan(
+                plan = (SubmissionPersistencePlanner.create_plan(
                         submission_payload=(submission),
                         batch_id=batch_id,
                         relation_id=relation_id,
@@ -350,35 +420,19 @@ class SubmissionImportOrchestrator:
                             for (question_id, option_ids,) in (context.option_ids_by_question.items())},
                     )
                 )
-                natural_key = (
-                    self._submission_natural_key(
-                        plan
-                    )
-                )
-
-                first_occurrence = (
-                    seen_natural_keys.get(
-                        natural_key
-                    )
-                )
-
+                natural_key = (self._submission_natural_key(plan))
+                first_occurrence = (seen_natural_keys.get(natural_key))
                 if first_occurrence is not None:
-                    results.append(
-                        SubmissionImportItemResult(
+                    results.append(SubmissionImportItemResult(
                             submission_index=index,
-                            supplier_tax_number=(
-                                supplier_tax_number
-                            ),
-                            requester_tax_number=(
-                                requester_tax_number
-                            ),
+                            supplier_tax_number=(supplier_tax_number),
+                            requester_tax_number=(requester_tax_number),
                             relation_id=relation_id,
                             plan=None,
                             existing_submission_id=None,
                             is_new=False,
                             error=(
-                                "duplicate submission in import; "
-                                "first occurrence: "
+                                "duplicate submission in import; first occurrence: "
                                 f"{first_occurrence}"
                             ),
                         )
@@ -386,14 +440,20 @@ class SubmissionImportOrchestrator:
 
                     continue
 
-                seen_natural_keys[
-                    natural_key
-                ] = index
-
+                seen_natural_keys[natural_key] = index
+                supplement_answers = ()
                 if context.batch_exists:
                     preflight = (self._submission_writer.preflight(plan))
                     existing_submission_id = (preflight.existing_submission_id)
                     is_new = preflight.can_insert
+                    if is_new:
+                        supplement_preflight = (self._submission_writer.preflight_supplement(plan))
+                        if (
+                                supplement_preflight.existing_submission_id is not None
+                        ):
+                            existing_submission_id = (supplement_preflight.existing_submission_id)
+                            supplement_answers = (supplement_preflight.supplement_answers)
+                            is_new = False
 
                 else:
                     existing_submission_id = None
@@ -408,6 +468,7 @@ class SubmissionImportOrchestrator:
                         existing_submission_id=(existing_submission_id),
                         is_new=is_new,
                         error=None,
+                        supplement_answers=(supplement_answers),
                     )
                 )
 
@@ -433,6 +494,53 @@ class SubmissionImportOrchestrator:
             )
         )
 
+    def execute_supplements(
+        self,
+        *,
+        payload: dict,
+        batch_id: str,
+    ) -> SubmissionSupplementExecutionResult:
+        dry_run = self.run_dry_run(
+            payload=payload,
+            batch_id=batch_id,
+        )
+
+        if dry_run.error_count:
+            raise ValueError(
+                "submission import contains "
+                f"{dry_run.error_count} error(s); "
+                "supplement database write aborted"
+            )
+
+        if dry_run.supplement_count == 0:
+            raise ValueError("submission import contains no supplement submissions")
+        if (dry_run.supplement_count != dry_run.submission_count
+        ):
+            raise ValueError("mixed supplement import is not supported; all submissions must have STATUS SUPPLEMENT")
+        if dry_run.new_count:
+            raise ValueError("supplement import contains NEW submission(s); database write aborted")
+        if dry_run.existing_count:
+            raise ValueError("supplement import contains EXISTING submission(s); database write aborted")
+        if self._import_writer is None:
+            raise RuntimeError("import_writer is required for supplement execute")
+        if self._import_verifier is None:
+            raise RuntimeError("import_verifier is required for supplement execute")
+        supplement_items = [item for item in dry_run.items if item.is_supplement]
+        write_result = (self._import_writer.write_supplement_items(items=supplement_items))
+        verification_result = None
+        verification_error = None
+        try:
+            verification_result = (self._import_verifier.verify_supplement_items(items=supplement_items))
+        except Exception as error:
+            verification_error = str(error)
+        return (SubmissionSupplementExecutionResult(
+                dry_run=dry_run,
+                write_result=write_result,
+                verification_result=(verification_result),
+                verification_error=(verification_error),
+            )
+        )
+
     def execute(
             self,
             *,
@@ -449,6 +557,15 @@ class SubmissionImportOrchestrator:
             raise ValueError(
                 "submission import contains "
                 f"{dry_run.error_count} error(s); "
+                "database write aborted"
+            )
+        if dry_run.supplement_count:
+            raise ValueError(
+                "submission import contains "
+                f"{dry_run.supplement_count} "
+                "supplement submission(s); "
+                "supplement execute is not "
+                "supported yet; "
                 "database write aborted"
             )
 
@@ -509,6 +626,15 @@ class SubmissionImportOrchestrator:
             raise ValueError(
                 "submission import contains "
                 f"{dry_run.error_count} error(s); "
+                "database write aborted"
+            )
+        if dry_run.supplement_count:
+            raise ValueError(
+                "submission import contains "
+                f"{dry_run.supplement_count} "
+                "supplement submission(s); "
+                "supplement execute is not "
+                "supported yet; "
                 "database write aborted"
             )
 

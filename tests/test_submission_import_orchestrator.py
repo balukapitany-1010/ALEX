@@ -1,7 +1,24 @@
 from dataclasses import dataclass
-from alex.esg.services.submission_import_orchestrator import SubmissionImportOrchestrator
+from alex.esg.services.submission_import_orchestrator import (
+    SubmissionImportDryRunResult,
+    SubmissionImportItemResult,
+    SubmissionImportOrchestrator,
+)
 from copy import deepcopy
 import pytest
+from alex.esg.services.submission_answer_persistence_mapper import SubmissionAnswerPersistenceData
+
+@dataclass(frozen=True)
+class FakeSupplementWriteResult:
+    supplement_submission_count: int
+    answer_count: int
+    answer_value_count: int
+
+
+@dataclass(frozen=True)
+class FakeSupplementVerificationResult:
+    is_valid: bool
+
 @dataclass(frozen=True)
 class FakeVerificationResult:
     is_valid: bool
@@ -12,7 +29,13 @@ class FakeImportVerifier:
         *,
         is_valid=True,
         fail=False,
+        supplement_is_valid=True,
+        supplement_fail=False,
     ):
+        self.supplement_is_valid = (supplement_is_valid)
+        self.supplement_fail = (supplement_fail)
+        self.verify_supplement_items_calls = 0
+        self.last_supplement_items = None
         self.is_valid = is_valid
         self.fail = fail
         self.verify_calls = 0
@@ -20,6 +43,17 @@ class FakeImportVerifier:
         self.last_questionnaire_code = None
         self.last_spec_version = None
         self.last_plans = None
+
+    def verify_supplement_items(
+        self,
+        *,
+        items,
+    ):
+        self.verify_supplement_items_calls += 1
+        self.last_supplement_items = list(items)
+        if self.supplement_fail:
+            raise RuntimeError("supplement verification failed")
+        return FakeSupplementVerificationResult(is_valid=(self.supplement_is_valid))
 
     def verify_new_batch(
         self,
@@ -67,6 +101,21 @@ class FakePreflightResult:
     @property
     def can_insert(self) -> bool:
         return (self.existing_submission_id is None)
+
+@dataclass(frozen=True)
+class FakeSupplementPreflightResult:
+    existing_submission_id: int | None
+    supplement_answers: tuple
+
+    @property
+    def is_supplement(self) -> bool:
+        return (
+            self.existing_submission_id
+            is not None
+            and bool(
+                self.supplement_answers
+            )
+        )
 
 class FakeContextReader:
     def __init__(
@@ -132,6 +181,8 @@ class FakeImportWriter:
         *,
         batch_created=False,
         submission_results=(),
+        supplement_result=None,
+        supplement_fail=False,
 
     ):
         self.batch_created = (batch_created)
@@ -142,6 +193,21 @@ class FakeImportWriter:
         self.last_spec_version = None
         self.last_plans = None
         self.write_rollback_calls = 0
+        self.supplement_result = (supplement_result)
+        self.supplement_fail = (supplement_fail)
+        self.write_supplement_items_calls = 0
+        self.last_supplement_items = None
+
+    def write_supplement_items(
+        self,
+        *,
+        items,
+    ):
+        self.write_supplement_items_calls += 1
+        self.last_supplement_items = list(items)
+        if self.supplement_fail:
+            raise RuntimeError("supplement write failed")
+        return self.supplement_result
 
     def write(
         self,
@@ -191,12 +257,38 @@ class FakeWriter:
             self,
             existing_submission_id=323,
             existing_submission_ids_by_relation=None,
+            supplement_existing_submission_id=None,
+            supplement_has_answers=False,
     ):
         self.existing_submission_id = (existing_submission_id)
         self.existing_submission_ids_by_relation = (existing_submission_ids_by_relation)
         self.preflight_calls = 0
         self.write_many_calls = 0
         self.write_many_plans = None
+        self.supplement_existing_submission_id = (supplement_existing_submission_id)
+        self.supplement_has_answers = (supplement_has_answers)
+        self.preflight_supplement_calls = 0
+
+    def preflight_supplement(
+            self,
+            plan,
+    ):
+        self.preflight_supplement_calls += 1
+
+        supplement_answers = (
+            plan.answers
+            if self.supplement_has_answers
+            else ()
+        )
+
+        return FakeSupplementPreflightResult(
+            existing_submission_id=(
+                self.supplement_existing_submission_id
+            ),
+            supplement_answers=(
+                supplement_answers
+            ),
+        )
 
     def _get_existing_submission_id(
             self,
@@ -221,15 +313,12 @@ class FakeWriter:
     ):
         self.write_many_calls += 1
         self.write_many_plans = plans
-
         results = []
-
         for index, plan in enumerate(
                 plans,
                 start=1,
         ):
             existing_submission_id = (self._get_existing_submission_id(plan ))
-
             if existing_submission_id is not None:
                 results.append(FakeWriteResult(
                         submission_id=(existing_submission_id),
@@ -238,9 +327,7 @@ class FakeWriter:
                         answer_value_count=0,
                     )
                 )
-
                 continue
-
             results.append(FakeWriteResult(
                     submission_id=(1000 + index),
                     created=True,
@@ -248,7 +335,6 @@ class FakeWriter:
                     answer_value_count=(plan.answer_value_count),
                 )
             )
-
         return tuple(
             results
         )
@@ -307,11 +393,7 @@ def create_payload():
     }
 def create_mixed_payload():
     payload = create_payload()
-
-    second_submission = deepcopy(
-        payload["submissions"][0]
-    )
-
+    second_submission = deepcopy(payload["submissions"][0])
     second_submission[
         "response"
     ][
@@ -328,27 +410,18 @@ def create_mixed_payload():
         "cover"
     ][
         "supplier"
-    ][
-        "period"
-    ] = "2024"
+    ]["period"] = "2024"
 
-    payload[
-        "submissions"
-    ].append(
-        second_submission
-    )
-
+    payload["submissions"].append(second_submission)
     return payload
 
 
 def test_dry_run_reports_existing_submission():
     writer = FakeWriter(existing_submission_id=323)
-
     orchestrator = SubmissionImportOrchestrator(
         context_reader=FakeContextReader(),
         submission_writer=writer,
     )
-
     result = (orchestrator.run_dry_run(
             payload=create_payload(),
             batch_id="BATCH_TEST",
@@ -387,7 +460,6 @@ def test_dry_run_reports_new_submission():
 
 def test_dry_run_collects_submission_error():
     payload = create_payload()
-
     payload[
         "submissions"
     ][0][
@@ -419,9 +491,7 @@ def test_dry_run_collects_submission_error():
     assert writer.preflight_calls == 0
 
 def test_execute_writes_valid_plans():
-    writer = FakeWriter(
-        existing_submission_id=None
-    )
+    writer = FakeWriter(existing_submission_id=None)
     import_writer = FakeImportWriter(
         batch_created=False,
         submission_results=(
@@ -433,14 +503,12 @@ def test_execute_writes_valid_plans():
             ),
         ),
     )
-
     orchestrator = (SubmissionImportOrchestrator(
             context_reader=(FakeContextReader()),
             submission_writer=writer,
             import_writer=import_writer,
         )
     )
-
     result = orchestrator.execute(
         payload=create_payload(),
         batch_id="BATCH_TEST",
@@ -471,16 +539,13 @@ def test_execute_aborts_before_write_when_dry_run_has_error():
 
     writer = FakeWriter()
     import_writer = FakeImportWriter()
-
     orchestrator = (SubmissionImportOrchestrator(
             context_reader=(FakeContextReader()),
             submission_writer=writer,
             import_writer=import_writer,
         )
     )
-
     import pytest
-
     with pytest.raises(
         ValueError,
         match="database write aborted",
@@ -489,7 +554,6 @@ def test_execute_aborts_before_write_when_dry_run_has_error():
             payload=payload,
             batch_id="BATCH_TEST",
         )
-
     assert import_writer.write_calls == 0
 
 def test_execute_reports_existing_submission():
@@ -512,7 +576,6 @@ def test_execute_reports_existing_submission():
             import_writer=import_writer,
         )
     )
-
     result = orchestrator.execute(
         payload=create_payload(),
         batch_id="BATCH_TEST",
@@ -529,15 +592,13 @@ def test_execute_reports_existing_submission():
 
 def test_execute_handles_existing_and_new_submissions():
     payload = create_mixed_payload()
-    context_reader = (
-        FakeContextReader(
+    context_reader = ( FakeContextReader(
             relation_ids_by_supplier_tax={
                 "11102481207": 274,
                 "10654411243": 275,
             }
         )
     )
-
     writer = FakeWriter(
         existing_submission_ids_by_relation={
             274: 323,
@@ -561,14 +622,12 @@ def test_execute_handles_existing_and_new_submissions():
             ),
         ),
     )
-
     orchestrator = (SubmissionImportOrchestrator(
             context_reader=(context_reader),
             submission_writer=writer,
             import_writer=import_writer,
         )
     )
-
     result = orchestrator.execute(
         payload=payload,
         batch_id="BATCH_TEST",
@@ -591,12 +650,10 @@ def test_dry_run_supports_new_batch_without_preflight():
     writer = FakeWriter(
         existing_submission_id=None
     )
-
     orchestrator = SubmissionImportOrchestrator(
         context_reader=FakeContextReader(batch_exists=False),
         submission_writer=writer,
     )
-
     result = orchestrator.run_dry_run(
         payload=create_payload(),
         batch_id="NEW_BATCH",
@@ -648,7 +705,6 @@ def test_execute_requires_import_writer():
             submission_writer=(FakeWriter(existing_submission_id=323)),
         )
     )
-
     with pytest.raises(
         RuntimeError,
         match="import_writer is required",
@@ -669,13 +725,11 @@ def test_execute_rollback_uses_rollback_writer():
             ),
         ),
     )
-
     orchestrator = SubmissionImportOrchestrator(
         context_reader=FakeContextReader(batch_exists=False),
         submission_writer=(submission_writer),
         import_writer=import_writer,
     )
-
     result = orchestrator.execute_rollback(
         payload=create_payload(),
         batch_id="NEW_BATCH",
@@ -688,7 +742,6 @@ def test_execute_rollback_uses_rollback_writer():
 
 def test_execute_reports_failed_post_write_verification():
     submission_writer = FakeWriter(existing_submission_id=None)
-
     import_writer = FakeImportWriter(
         batch_created=True,
         submission_results=(FakeWriteResult(
@@ -699,16 +752,13 @@ def test_execute_reports_failed_post_write_verification():
             ),
         ),
     )
-
     import_verifier = FakeImportVerifier(is_valid=False)
-
     orchestrator = SubmissionImportOrchestrator(
         context_reader=FakeContextReader(batch_exists=False),
         submission_writer=submission_writer,
         import_writer=import_writer,
         import_verifier=import_verifier,
     )
-
     result = orchestrator.execute(
         payload=create_payload(),
         batch_id="NEW_BATCH",
@@ -755,28 +805,13 @@ def test_execute_preserves_commit_when_verifier_fails():
 
 def test_dry_run_rejects_duplicate_submission_in_same_import():
     payload = create_payload()
-
-    duplicate = deepcopy(
-        payload["submissions"][0]
-    )
-
-    payload["submissions"].append(
-        duplicate
-    )
-
-    orchestrator = (
-        SubmissionImportOrchestrator(
-            context_reader=(
-                FakeContextReader()
-            ),
-            submission_writer=(
-                FakeWriter(
-                    existing_submission_id=323
-                )
-            ),
+    duplicate = deepcopy(payload["submissions"][0])
+    payload["submissions"].append(duplicate)
+    orchestrator = (SubmissionImportOrchestrator(
+            context_reader=(FakeContextReader()),
+            submission_writer=(FakeWriter(existing_submission_id=323)),
         )
     )
-
     result = orchestrator.run_dry_run(
         payload=payload,
         batch_id="BATCH_TEST",
@@ -786,25 +821,13 @@ def test_dry_run_rejects_duplicate_submission_in_same_import():
     assert result.existing_count == 1
     assert result.new_count == 0
     assert result.error_count == 1
-
     assert result.items[0].is_valid is True
     assert result.items[1].is_valid is False
-
-    assert (
-        result.items[1].error
-        == (
-            "duplicate submission in import; "
-            "first occurrence: 1"
-        )
-    )
+    assert (result.items[1].error == ("duplicate submission in import; first occurrence: 1"))
 
 def test_dry_run_accepts_distinct_submissions_in_same_import():
     payload = create_payload()
-
-    second = deepcopy(
-        payload["submissions"][0]
-    )
-
+    second = deepcopy(payload["submissions"][0])
     second[
         "response"
     ][
@@ -815,23 +838,12 @@ def test_dry_run_accepts_distinct_submissions_in_same_import():
         "tax_number"
     ] = "87654321"
 
-    payload["submissions"].append(
-        second
-    )
-
-    orchestrator = (
-        SubmissionImportOrchestrator(
-            context_reader=(
-                FakeContextReader()
-            ),
-            submission_writer=(
-                FakeWriter(
-                    existing_submission_id=None
-                )
-            ),
+    payload["submissions"].append(second)
+    orchestrator = (SubmissionImportOrchestrator(
+            context_reader=(FakeContextReader()),
+            submission_writer=(FakeWriter(existing_submission_id=None)),
         )
     )
-
     result = orchestrator.run_dry_run(
         payload=payload,
         batch_id="BATCH_TEST",
@@ -839,3 +851,298 @@ def test_dry_run_accepts_distinct_submissions_in_same_import():
 
     assert result.submission_count == 2
     assert result.error_count == 0
+
+def test_item_reports_supplement_counts():
+    plan = create_payload()
+    answer = SubmissionAnswerPersistenceData(
+        question_id="DETAIL_TEST",
+        values=(),
+    )
+    item = SubmissionImportItemResult(
+        submission_index=1,
+        supplier_tax_number="11102481-2-07",
+        requester_tax_number="12345678",
+        relation_id=274,
+        plan=None,
+        existing_submission_id=323,
+        is_new=False,
+        error=None,
+        supplement_answers=(answer,),
+    )
+
+    assert item.is_supplement is True
+    assert item.exists is True
+    assert item.supplement_answer_count == 1
+    assert (item.supplement_answer_value_count == 0)
+
+def test_dry_run_counts_supplement_separately():
+    answer = SubmissionAnswerPersistenceData(
+        question_id="DETAIL_TEST",
+        values=(),
+    )
+    item = SubmissionImportItemResult(
+        submission_index=1,
+        supplier_tax_number="11102481-2-07",
+        requester_tax_number="12345678",
+        relation_id=274,
+        plan=None,
+        existing_submission_id=323,
+        is_new=False,
+        error=None,
+        supplement_answers=(answer,),
+    )
+    result = SubmissionImportDryRunResult(
+        batch_id="BATCH_TEST",
+        questionnaire_code="SZTFH",
+        batch_exists=True,
+        spec_version="2.0",
+        items=(item,),
+    )
+
+    assert result.submission_count == 1
+    assert result.existing_count == 0
+    assert result.new_count == 0
+    assert result.supplement_count == 1
+    assert result.error_count == 0
+    assert (result.supplement_answer_count == 1)
+
+
+def test_item_without_supplement_remains_existing():
+    item = SubmissionImportItemResult(
+        submission_index=1,
+        supplier_tax_number="11102481-2-07",
+        requester_tax_number="12345678",
+        relation_id=274,
+        plan=None,
+        existing_submission_id=323,
+        is_new=False,
+        error=None,
+    )
+
+    assert item.exists is True
+    assert item.is_supplement is False
+
+def test_dry_run_detects_supplement_submission():
+    writer = FakeWriter(
+        existing_submission_id=None,
+        supplement_existing_submission_id=323,
+        supplement_has_answers=True,
+    )
+    orchestrator = (SubmissionImportOrchestrator(
+            context_reader=(FakeContextReader()),
+            submission_writer=writer,
+        )
+    )
+    result = orchestrator.run_dry_run(
+        payload=create_payload(),
+        batch_id="BATCH_TEST",
+    )
+
+    assert result.submission_count == 1
+    assert result.existing_count == 0
+    assert result.new_count == 0
+    assert result.supplement_count == 1
+    assert result.error_count == 0
+    item = result.items[0]
+    assert (item.existing_submission_id == 323)
+    assert item.is_new is False
+    assert item.is_supplement is True
+    assert (item.supplement_answer_count == 1)
+    assert (item.supplement_answer_value_count == 1)
+    assert writer.preflight_calls == 1
+    assert (writer.preflight_supplement_calls == 1)
+
+
+def test_dry_run_treats_complete_legacy_candidate_as_existing():
+    writer = FakeWriter(
+        existing_submission_id=None,
+        supplement_existing_submission_id=323,
+        supplement_has_answers=False,
+    )
+    orchestrator = (SubmissionImportOrchestrator(
+            context_reader=(FakeContextReader()),
+            submission_writer=writer,
+        )
+    )
+    result = orchestrator.run_dry_run(
+        payload=create_payload(),
+        batch_id="BATCH_TEST",
+    )
+    assert result.existing_count == 1
+    assert result.new_count == 0
+    assert result.supplement_count == 0
+    assert result.error_count == 0
+    item = result.items[0]
+    assert (item.existing_submission_id == 323)
+    assert item.is_new is False
+    assert item.is_supplement is False
+    assert (writer.preflight_supplement_calls == 1)
+
+
+def test_dry_run_remains_new_when_no_supplement_candidate_exists():
+    writer = FakeWriter(
+        existing_submission_id=None,
+        supplement_existing_submission_id=None,
+    )
+    orchestrator = (SubmissionImportOrchestrator(
+            context_reader=(FakeContextReader()),
+            submission_writer=writer,
+        )
+    )
+    result = orchestrator.run_dry_run(
+        payload=create_payload(),
+        batch_id="BATCH_TEST",
+    )
+
+    assert result.existing_count == 0
+    assert result.new_count == 1
+    assert result.supplement_count == 0
+    assert result.error_count == 0
+    assert (writer.preflight_supplement_calls == 1)
+
+
+def test_dry_run_does_not_check_supplement_when_normal_submission_exists():
+    writer = FakeWriter(
+        existing_submission_id=323,
+        supplement_existing_submission_id=999,
+        supplement_has_answers=True,
+    )
+    orchestrator = (SubmissionImportOrchestrator(
+            context_reader=(FakeContextReader()),
+            submission_writer=writer,
+        )
+    )
+    result = orchestrator.run_dry_run(
+        payload=create_payload(),
+        batch_id="BATCH_TEST",
+    )
+
+    assert result.existing_count == 1
+    assert result.new_count == 0
+    assert result.supplement_count == 0
+    assert writer.preflight_calls == 1
+    assert (writer.preflight_supplement_calls == 0)
+
+def create_supplement_orchestrator(
+    *,
+    import_writer=None,
+    import_verifier=None,
+):
+    writer = FakeWriter(
+        existing_submission_id=None,
+        supplement_existing_submission_id=323,
+        supplement_has_answers=True,
+    )
+
+    return SubmissionImportOrchestrator(
+        context_reader=FakeContextReader(),
+        submission_writer=writer,
+        import_writer=import_writer,
+        import_verifier=import_verifier,
+    )
+
+def test_execute_supplements_writes_and_verifies():
+    import_writer = FakeImportWriter(supplement_result=(FakeSupplementWriteResult(
+                supplement_submission_count=1,
+                answer_count=1,
+                answer_value_count=1,
+            )
+        )
+    )
+    import_verifier = FakeImportVerifier(supplement_is_valid=True)
+    orchestrator = (create_supplement_orchestrator(
+            import_writer=import_writer,
+            import_verifier=import_verifier,
+        )
+    )
+    result = orchestrator.execute_supplements(
+        payload=create_payload(),
+        batch_id="BATCH_TEST",
+    )
+
+    assert (result.supplement_submission_count == 1)
+    assert result.created_answer_count == 1
+    assert (result.created_answer_value_count == 1)
+    assert result.verification_succeeded is True
+    assert (import_writer.write_supplement_items_calls == 1)
+    assert (import_verifier.verify_supplement_items_calls == 1)
+
+
+def test_execute_supplements_rejects_normal_new_submission():
+    orchestrator = SubmissionImportOrchestrator(
+        context_reader=FakeContextReader(),
+        submission_writer=FakeWriter(
+            existing_submission_id=None,
+            supplement_existing_submission_id=None,),
+        import_writer=FakeImportWriter(),
+        import_verifier=FakeImportVerifier(),
+    )
+    with pytest.raises(
+        ValueError,
+        match="no supplement submissions",
+    ):
+        orchestrator.execute_supplements(
+            payload=create_payload(),
+            batch_id="BATCH_TEST",
+        )
+
+
+def test_execute_supplements_requires_import_writer():
+    orchestrator = (create_supplement_orchestrator(
+            import_writer=None,
+            import_verifier=(FakeImportVerifier()),
+        )
+    )
+    with pytest.raises(
+        RuntimeError,
+        match=("import_writer is required for supplement execute"),
+    ):
+        orchestrator.execute_supplements(
+            payload=create_payload(),
+            batch_id="BATCH_TEST",
+        )
+
+
+def test_execute_supplements_reports_failed_verification():
+    import_writer = FakeImportWriter(supplement_result=(FakeSupplementWriteResult(
+                supplement_submission_count=1,
+                answer_count=1,
+                answer_value_count=1,
+            )
+        )
+    )
+    import_verifier = FakeImportVerifier(supplement_is_valid=False)
+    orchestrator = (create_supplement_orchestrator(
+            import_writer=import_writer,
+            import_verifier=import_verifier,
+        )
+    )
+    result = orchestrator.execute_supplements(
+        payload=create_payload(),
+        batch_id="BATCH_TEST",
+    )
+    assert (result.verification_succeeded is False)
+    assert result.verification_error is None
+
+
+def test_execute_supplements_preserves_commit_result_when_verifier_fails():
+    import_writer = FakeImportWriter(supplement_result=(FakeSupplementWriteResult(
+                supplement_submission_count=1,
+                answer_count=1,
+                answer_value_count=1,
+            )
+        )
+    )
+    import_verifier = FakeImportVerifier(supplement_fail=True)
+    orchestrator = (create_supplement_orchestrator(
+            import_writer=import_writer,
+            import_verifier=import_verifier,
+        )
+    )
+    result = orchestrator.execute_supplements(
+        payload=create_payload(),
+        batch_id="BATCH_TEST",
+    )
+    assert (result.supplement_submission_count == 1)
+    assert (result.verification_succeeded is False)
+    assert (result.verification_error == "supplement verification failed")

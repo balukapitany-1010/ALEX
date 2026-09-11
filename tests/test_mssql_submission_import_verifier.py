@@ -1,6 +1,12 @@
-from alex.esg.infrastructure.repositories.mssql_submission_import_verifier import MssqlSubmissionImportVerifier
 from alex.esg.services.submission_persistence_mapper import SubmissionPersistenceData
 from alex.esg.services.submission_persistence_plan import SubmissionPersistencePlan
+from decimal import Decimal
+from alex.esg.infrastructure.repositories.mssql_submission_import_verifier import (
+    MssqlSubmissionImportVerifier,
+    MssqlSubmissionSupplementVerificationRequest,
+)
+from alex.esg.services.answer_value_persistence_mapper import AnswerValuePersistenceData
+from alex.esg.services.submission_answer_persistence_mapper import SubmissionAnswerPersistenceData
 
 class FakeCursor:
     def __init__(
@@ -10,45 +16,103 @@ class FakeCursor:
         submission_count=1,
         answer_count=2,
         answer_value_count=3,
+        supplement_parent_row=None,
+        supplement_answer_rows=None,
     ):
         self.batch_row = batch_row
         self.submission_count = (submission_count)
         self.answer_count = (answer_count)
         self.answer_value_count = (answer_value_count)
         self._result = None
+        self.supplement_parent_row = (supplement_parent_row)
+        self.supplement_answer_rows = list(supplement_answer_rows or ())
+        self._rows = []
 
     def execute(
-        self,
-        sql,
-        *params,
+            self,
+            sql,
+            *params,
     ):
-        normalized_sql = " ".join(sql.split())
+        normalized_sql = " ".join(
+            sql.split()
+        )
 
         if (
-            "FROM dbo.SUBMISSION_BATCH" in normalized_sql
+                "FROM dbo.SUBMISSION"
+                in normalized_sql
+                and "WHERE submission_id = ?"
+                in normalized_sql
+                and "COUNT_BIG"
+                not in normalized_sql
         ):
-            self._result = (self.batch_row)
+            self._result = (
+                self.supplement_parent_row
+            )
+            self._rows = []
 
-        elif ("FROM dbo.SUBMISSION_ANSWER AS sa" in normalized_sql and "dbo.ANSWER_VALUE" not in normalized_sql
+        elif (
+                "FROM dbo.SUBMISSION_ANSWER AS sa"
+                in normalized_sql
+                and "LEFT JOIN dbo.ANSWER_VALUE AS av"
+                in normalized_sql
+                and "WHERE sa.submission_id = ?"
+                in normalized_sql
         ):
-            self._result = (self.answer_count,)
+            self._result = None
+            self._rows = list(
+                self.supplement_answer_rows
+            )
 
-        elif ("FROM dbo.ANSWER_VALUE AS av" in normalized_sql
+        elif (
+                "FROM dbo.SUBMISSION_BATCH"
+                in normalized_sql
         ):
-            self._result = (self.answer_value_count,)
+            self._result = (
+                self.batch_row
+            )
 
-        elif ("FROM dbo.SUBMISSION" in normalized_sql):
-            self._result = (self.submission_count,)
+        elif (
+                "FROM dbo.SUBMISSION_ANSWER AS sa"
+                in normalized_sql
+                and "dbo.ANSWER_VALUE"
+                not in normalized_sql
+        ):
+            self._result = (
+                self.answer_count,
+            )
+
+        elif (
+                "FROM dbo.ANSWER_VALUE AS av"
+                in normalized_sql
+        ):
+            self._result = (
+                self.answer_value_count,
+            )
+
+        elif (
+                "FROM dbo.SUBMISSION"
+                in normalized_sql
+        ):
+            self._result = (
+                self.submission_count,
+            )
 
         else:
-            raise AssertionError(normalized_sql)
+            raise AssertionError(
+                normalized_sql
+            )
 
         return self
-
     def fetchone(
         self,
     ):
         return self._result
+    def fetchall(
+        self,
+    ):
+        return list(
+            self._rows
+        )
 
 
 class FakeConnection:
@@ -131,7 +195,47 @@ def create_plan(
         answers=tuple(answers),
         skipped_question_ids=(),
     )
+def create_exact_supplement_plan():
+    submission = SubmissionPersistenceData(
+        batch_id="BATCH_TEST",
+        relation_id=123,
+        external_supplier_key=(
+            "SUP_12345678"
+        ),
+        respondent_id=(
+            "RESP_12345678_2026-Q2"
+        ),
+        respondent_mp_id=None,
+        org_size=None,
+        submitted_at=None,
+        status="imported_complete",
+        raw_payload="{}",
+    )
 
+    value = AnswerValuePersistenceData(
+        field_type="text",
+        option_id=None,
+        selected=None,
+        number_value=None,
+        text_value="supplement",
+    )
+
+    answer = (
+        SubmissionAnswerPersistenceData(
+            question_id="Q1",
+            values=(
+                value,
+            ),
+        )
+    )
+
+    return SubmissionPersistencePlan(
+        submission=submission,
+        answers=(
+            answer,
+        ),
+        skipped_question_ids=(),
+    )
 
 def test_verifier_accepts_matching_new_batch():
     cursor = FakeCursor(
@@ -247,3 +351,253 @@ def test_verifier_detects_missing_batch():
 
     assert result.is_valid is False
     assert result.batch_exists is False
+
+def test_verifier_accepts_exact_supplement_state():
+    cursor = FakeCursor(
+        supplement_parent_row=(
+            "BATCH_TEST",
+            123,
+            "SUP_12345678",
+            None,
+            None,
+        ),
+        supplement_answer_rows=[
+            (
+                1001,
+                "Q1",
+                "text",
+                None,
+                None,
+                None,
+                "supplement",
+            ),
+        ],
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    verifier = MssqlSubmissionImportVerifier(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    result = verifier.verify_supplements(
+        requests=[
+            MssqlSubmissionSupplementVerificationRequest(
+                submission_id=760,
+                plan=(
+                    create_exact_supplement_plan()
+                ),
+            )
+        ]
+    )
+
+    assert result.is_valid is True
+    assert result.submission_count == 1
+    assert result.expected_answer_count == 1
+    assert result.actual_answer_count == 1
+    assert (
+        result.expected_answer_value_count
+        == 1
+    )
+    assert (
+        result.actual_answer_value_count
+        == 1
+    )
+
+    assert result.items[0].is_valid is True
+
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+
+def test_verifier_detects_missing_supplement_answer():
+    cursor = FakeCursor(
+        supplement_parent_row=(
+            "BATCH_TEST",
+            123,
+            "SUP_12345678",
+            None,
+            None,
+        ),
+        supplement_answer_rows=[],
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    verifier = MssqlSubmissionImportVerifier(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    result = verifier.verify_supplements(
+        requests=[
+            MssqlSubmissionSupplementVerificationRequest(
+                submission_id=760,
+                plan=(
+                    create_exact_supplement_plan()
+                ),
+            )
+        ]
+    )
+
+    assert result.is_valid is False
+    assert (
+        result.items[0].question_ids_match
+        is False
+    )
+
+
+def test_verifier_detects_changed_supplement_value():
+    cursor = FakeCursor(
+        supplement_parent_row=(
+            "BATCH_TEST",
+            123,
+            "SUP_12345678",
+            None,
+            None,
+        ),
+        supplement_answer_rows=[
+            (
+                1001,
+                "Q1",
+                "text",
+                None,
+                None,
+                None,
+                "CHANGED",
+            ),
+        ],
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    verifier = MssqlSubmissionImportVerifier(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    result = verifier.verify_supplements(
+        requests=[
+            MssqlSubmissionSupplementVerificationRequest(
+                submission_id=760,
+                plan=(
+                    create_exact_supplement_plan()
+                ),
+            )
+        ]
+    )
+
+    assert result.is_valid is False
+    assert (
+        result.items[0].question_ids_match
+        is True
+    )
+    assert (
+        result.items[0].answer_values_match
+        is False
+    )
+
+
+def test_verifier_detects_wrong_supplement_parent():
+    cursor = FakeCursor(
+        supplement_parent_row=(
+            "WRONG_BATCH",
+            123,
+            "SUP_12345678",
+            None,
+            None,
+        ),
+        supplement_answer_rows=[
+            (
+                1001,
+                "Q1",
+                "text",
+                None,
+                None,
+                None,
+                "supplement",
+            ),
+        ],
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    verifier = MssqlSubmissionImportVerifier(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    result = verifier.verify_supplements(
+        requests=[
+            MssqlSubmissionSupplementVerificationRequest(
+                submission_id=760,
+                plan=(
+                    create_exact_supplement_plan()
+                ),
+            )
+        ]
+    )
+
+    assert result.is_valid is False
+    assert (
+        result.items[0].parent_matches
+        is False
+    )
+
+
+def test_verifier_detects_missing_supplement_submission():
+    cursor = FakeCursor(
+        supplement_parent_row=None,
+        supplement_answer_rows=[],
+    )
+
+    connection = FakeConnection(
+        cursor
+    )
+
+    verifier = MssqlSubmissionImportVerifier(
+        FakeConnectionFactory(
+            connection
+        )
+    )
+
+    result = verifier.verify_supplements(
+        requests=[
+            MssqlSubmissionSupplementVerificationRequest(
+                submission_id=760,
+                plan=(
+                    create_exact_supplement_plan()
+                ),
+            )
+        ]
+    )
+
+    assert result.is_valid is False
+
+    assert (
+        result.items[0].submission_exists
+        is False
+    )
+
+    assert (
+        result.items[0].actual_answer_count
+        == 0
+    )
+
+    assert (
+        result.items[0].actual_answer_value_count
+        == 0
+    )

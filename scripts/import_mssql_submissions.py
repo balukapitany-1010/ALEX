@@ -15,23 +15,16 @@ if hasattr(
     sys.stdout,
     "reconfigure",
 ):
-    sys.stdout.reconfigure(
-        errors="replace"
-    )
+    sys.stdout.reconfigure( errors="replace")
 
 if hasattr(
     sys.stderr,
     "reconfigure",
 ):
-    sys.stderr.reconfigure(
-        errors="replace"
-    )
+    sys.stderr.reconfigure(errors="replace")
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description=(
-            "SZTFH submission JSON "
-            "MSSQL import dry-run."
-        )
+        description=("SZTFH submission JSON MSSQL import dry-run.")
     )
 
     parser.add_argument(
@@ -45,45 +38,40 @@ def parse_arguments():
         required=True,
         help=("A használni kívánt SUBMISSION_BATCH batch_id."),
     )
-    mode_group = (
-        parser.add_mutually_exclusive_group()
-    )
+    mode_group = (parser.add_mutually_exclusive_group())
 
     mode_group.add_argument(
         "--execute",
         action="store_true",
-        help=(
-            "A validált submissionök "
-            "tényleges MSSQL mentése."
-        ),
+        help=("A validált submissionök tényleges MSSQL mentése."),
+    )
+    mode_group.add_argument(
+        "--execute-supplements",
+        action="store_true",
+        help=("Kizárólag SUPPLEMENT státuszú submissionök tényleges MSSQL kiegészítése."),
     )
 
     mode_group.add_argument(
         "--rollback-test",
         action="store_true",
-        help=(
-            "Az MSSQL írási folyamat "
-            "lefuttatása kötelező rollbackkel."
-        ),
+        help=("Az MSSQL írási folyamat lefuttatása kötelező rollbackkel."),
     )
-
     parser.add_argument(
         "--confirm-write",
         default=None,
-        help=(
-            "Írás esetén kötelező érték: WRITE"
-        ),
+        help=("Írás esetén kötelező érték: WRITE"),
     )
-
+    parser.add_argument(
+        "--confirm-supplements",
+        default=None,
+        help=("Supplement íráshoz kötelező érték: SUPPLEMENT"),
+    )
     parser.add_argument(
         "--confirm-rollback",
         default=None,
         help=(
-            "Rollback teszthez kötelező "
-            "érték: ROLLBACK"
-        ),
+            "Rollback teszthez kötelező érték: ROLLBACK"),
     )
-
     return parser.parse_args()
 
 
@@ -156,26 +144,64 @@ def print_result(
         print("SUBMISSION_ANSWER:", item.answer_count,)
         print("ANSWER_VALUE:",item.answer_value_count,)
 
-        if item.exists:
+        if item.is_supplement:
+            print("STATUS: SUPPLEMENT")
+            print(
+                "submission_id:",
+                item.existing_submission_id,
+            )
+            print(
+                "SUPPLEMENT_ANSWER:",
+                item.supplement_answer_count,
+            )
+            print(
+                "SUPPLEMENT_VALUE:",
+                item.supplement_answer_value_count,
+            )
+
+        elif item.exists:
             print("STATUS: EXISTING")
-            print("submission_id:",item.existing_submission_id,)
+            print(
+                "submission_id:",
+                item.existing_submission_id,
+            )
 
         elif item.is_new:
             print("STATUS: NEW")
 
         else:
-            print("  STATUS: UNKNOWN")
+            print("STATUS: UNKNOWN")
     print()
     print("=" * 70)
     print("ÖSSZESÍTÉS")
     print("=" * 70)
     print("Submissionök:", result.submission_count,)
-    print("EXISTING:", result.existing_count,)
-    print("NEW:", result.new_count,)
-    print("ERROR:", result.error_count,)
+    print(
+        "EXISTING:",
+        result.existing_count,
+    )
+    print(
+        "NEW:",
+        result.new_count,
+    )
+    print(
+        "SUPPLEMENT:",
+        result.supplement_count,
+    )
+    print(
+        "ERROR:",
+        result.error_count,
+    )
     print()
-    print("SUBMISSION_ANSWER:",result.answer_count,)
-    print("ANSWER_VALUE:", result.answer_value_count,)
+    print()
+    print(
+        "SUPPLEMENT_ANSWER:",
+        result.supplement_answer_count,
+    )
+    print(
+        "SUPPLEMENT_VALUE:",
+        result.supplement_answer_value_count,
+    )
     print()
     print("ADATBÁZIS-ÍRÁS: 0 rekord")
 
@@ -192,15 +218,112 @@ def print_execution_result(
     print("Létrehozott SUBMISSION_ANSWER:",execution_result.created_answer_count,)
     print("Létrehozott ANSWER_VALUE:",execution_result.created_answer_value_count,)
 
+def print_supplement_execution_result(
+    execution_result,
+) -> None:
+    print()
+    print("=" * 70)
+    print("SUPPLEMENT ÍRÁS EREDMÉNYE")
+    print("=" * 70)
+    print("Kiegészített submission:", execution_result.supplement_submission_count,)
+    print("Létrehozott SUBMISSION_ANSWER:", execution_result.created_answer_count,)
+    print("Létrehozott ANSWER_VALUE:", execution_result.created_answer_value_count,)
+
+def print_supplement_verification_result(
+    execution_result,
+) -> None:
+    print()
+    print("=" * 70)
+    print("SUPPLEMENT UTÓELLENŐRZÉS")
+    print("=" * 70)
+
+    if (execution_result.verification_error is not None
+    ):
+        print("ELLENŐRZÉS: HIBA")
+        print("Ok:", execution_result.verification_error,)
+        return
+
+    verification = (execution_result.verification_result)
+    if verification is None:
+        print("ELLENŐRZÉS: NINCS EREDMÉNY")
+        return
+
+    print("Submissionök:", verification.submission_count,)
+    print("SUBMISSION_ANSWER:", f"{verification.actual_answer_count}" " / "f"{verification.expected_answer_count}",)
+    print(
+        "ANSWER_VALUE:",
+        f"{verification.actual_answer_value_count}"
+        " / "
+        f"{verification.expected_answer_value_count}",
+    )
+
+    print()
+
+    for item in verification.items:
+        print("submission_id:", item.submission_id,)
+
+        print("SUBMISSION_ANSWER:",
+            f"{item.actual_answer_count}"
+            " / "
+            f"{item.expected_answer_count}",
+        )
+
+        print(
+            "ANSWER_VALUE:",
+            f"{item.actual_answer_value_count}"
+            " / "
+            f"{item.expected_answer_value_count}",
+        )
+
+        print("parent:",
+            (
+                "OK"
+                if item.parent_matches
+                else "HIBÁS"
+            ),
+        )
+
+        print("question_id:",
+            (
+                "OK"
+                if item.question_ids_match
+                else "HIBÁS"
+            ),
+        )
+
+        print("values:",
+            (
+                "OK"
+                if item.answer_values_match
+                else "HIBÁS"
+            ),
+        )
+
+        print("RESULT:",
+            (
+                "OK"
+                if item.is_valid
+                else "HIBÁS"
+            ),
+        )
+
+    print()
+
+    print("ELLENŐRZÉS:",
+        (
+            "SIKERES"
+            if verification.is_valid
+            else "HIBÁS"
+        ),
+    )
 
 def main() -> int:
     args = parse_arguments()
-
     mode_name = "DRY-RUN"
-
     if args.rollback_test:
         mode_name = "ROLLBACK-TEST"
-
+    elif args.execute_supplements:
+        mode_name = "EXECUTE-SUPPLEMENTS"
     elif args.execute:
         mode_name = "EXECUTE"
     try:
@@ -208,7 +331,6 @@ def main() -> int:
         config = (SqlServerConfig.from_environment())
         connection_factory = (SqlServerConnectionFactory(config))
         submission_writer = MssqlSubmissionWriter(connection_factory)
-
         batch_writer = MssqlSubmissionBatchWriter(connection_factory)
         import_verifier = (MssqlSubmissionImportVerifier(connection_factory))
         import_writer = MssqlSubmissionImportWriter(
@@ -216,22 +338,18 @@ def main() -> int:
             batch_writer=batch_writer,
             submission_writer=submission_writer,
         )
-
         context_reader = MssqlSubmissionImportContextReader(connection_factory)
-
         orchestrator = SubmissionImportOrchestrator(
             context_reader=context_reader,
             submission_writer=submission_writer,
             import_writer=import_writer,
             import_verifier=import_verifier,
         )
-
         result = (orchestrator.run_dry_run(
                 payload=payload,
                 batch_id=args.batch_id,
             )
         )
-
         print_result(
             json_file=args.json_file,
             result=result,
@@ -240,9 +358,7 @@ def main() -> int:
         if result.error_count:
             return 1
         if args.rollback_test:
-            if (
-                    args.confirm_rollback
-                    != "ROLLBACK"
+            if (args.confirm_rollback!= "ROLLBACK"
             ):
                 print()
                 print("ROLLBACK TESZT MEGSZAKÍTVA")
@@ -257,19 +373,42 @@ def main() -> int:
             print("MÓD: ROLLBACK-TEST")
             print("Az SQL írási lánc lefut, de COMMIT nem történik.")
 
-            execution_result = (
-                orchestrator.execute_rollback(
+            execution_result = (orchestrator.execute_rollback(
                     payload=payload,
                     batch_id=args.batch_id,
                 )
             )
 
             print_execution_result(execution_result)
-
             print()
             print("TRANZAKCIÓ EREDMÉNYE: ROLLBACK")
             print("TARTÓSAN MENTETT REKORD: 0")
 
+            return 0
+        if args.execute_supplements:
+            if (args.confirm_supplements != "SUPPLEMENT"
+            ):
+                print()
+                print("SUPPLEMENT ÍRÁS MEGSZAKÍTVA")
+                print("Az --execute-supplements használatához szükséges:")
+                print("--confirm-supplements SUPPLEMENT")
+                print()
+                print("ADATBÁZIS-ÍRÁS: 0 rekord")
+                return 2
+            print()
+            print("MÓD: EXECUTE-SUPPLEMENTS")
+            print("A validált supplementek atomikus mentése indul.")
+
+            execution_result = (orchestrator.execute_supplements(
+                    payload=payload,
+                    batch_id=args.batch_id,
+                )
+            )
+            print_supplement_execution_result(execution_result)
+            print_supplement_verification_result(execution_result)
+            if (execution_result.verification_succeeded is not True
+            ):
+                return 3
             return 0
 
         if not args.execute:

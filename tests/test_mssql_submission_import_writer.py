@@ -1,8 +1,13 @@
 from dataclasses import dataclass
 import pytest
-from alex.esg.infrastructure.repositories.mssql_submission_import_writer import MssqlSubmissionImportWriter
 from alex.esg.services.submission_persistence_mapper import SubmissionPersistenceData
 from alex.esg.services.submission_persistence_plan import SubmissionPersistencePlan
+from alex.esg.infrastructure.repositories.mssql_submission_import_writer import (
+    MssqlSubmissionImportWriter,
+    MssqlSubmissionSupplementWriteRequest,
+)
+from alex.esg.services.answer_value_persistence_mapper import AnswerValuePersistenceData
+from alex.esg.services.submission_answer_persistence_mapper import SubmissionAnswerPersistenceData
 
 @dataclass(frozen=True)
 class FakeBatchResult:
@@ -15,6 +20,12 @@ class FakeSubmissionResult:
     answer_count: int
     answer_value_count: int
 
+@dataclass(frozen=True)
+class FakeSupplementResult:
+    submission_id: int
+    answer_count: int
+    answer_value_count: int
+
 class FakeCursor:
     pass
 
@@ -24,15 +35,19 @@ class FakeConnection:
         self.committed = False
         self.rolled_back = False
         self.closed = False
+        self.commit_count = 0
+        self.rollback_count = 0
 
     def cursor(self):
         return self._cursor
 
     def commit(self):
         self.committed = True
+        self.commit_count += 1
 
     def rollback(self):
         self.rolled_back = True
+        self.rollback_count += 1
 
     def close(self):
         self.closed = True
@@ -83,10 +98,16 @@ class FakeSubmissionWriter:
         *,
         results=(),
         fail=False,
+        supplement_results=(),
+        fail_on_supplement_call=None,
     ):
         self.results = tuple(results)
         self.fail = fail
         self.calls = []
+        self.supplement_results = tuple(supplement_results)
+        self.fail_on_supplement_call = (fail_on_supplement_call)
+
+        self.supplement_calls = []
     def write_many_on_cursor(
         self,
         cursor,
@@ -102,6 +123,34 @@ class FakeSubmissionWriter:
         if self.fail:
             raise RuntimeError("submission write failed")
         return self.results
+
+    def supplement_answers_on_cursor(
+        self,
+        cursor,
+        submission_id,
+        answers,
+    ):
+        self.supplement_calls.append(
+            (
+                cursor,
+                submission_id,
+                answers,
+            )
+        )
+
+        call_number = len(self.supplement_calls)
+
+        if (self.fail_on_supplement_call == call_number
+        ):
+            raise RuntimeError("supplement write failed")
+        if self.supplement_results:
+            return self.supplement_results[call_number - 1]
+
+        return FakeSupplementResult(
+            submission_id=submission_id,
+            answer_count=len(answers),
+            answer_value_count=sum(len(answer.values) for answer in answers),
+        )
 
 def create_plan(
     batch_id="BATCH_TEST",
@@ -122,6 +171,20 @@ def create_plan(
         submission=submission,
         answers=(),
         skipped_question_ids=(),
+    )
+
+def create_supplement_answer():
+    value = AnswerValuePersistenceData(
+        field_type="text",
+        option_id=None,
+        selected=None,
+        number_value=None,
+        text_value="supplement",
+    )
+
+    return SubmissionAnswerPersistenceData(
+        question_id="034FEA08_DETAIL1",
+        values=(value,),
     )
 
 def test_import_writer_commits_new_batch_and_submission():
@@ -329,3 +392,228 @@ def test_import_writer_rollback_mode_never_commits():
     assert connection.closed is True
     assert len(batch_writer.calls) == 1
     assert len(submission_writer.calls) == 1
+
+def test_import_writer_commits_supplements_atomically():
+    connection = FakeConnection()
+
+    submission_writer = FakeSubmissionWriter(
+        supplement_results=(
+            FakeSupplementResult(
+                submission_id=760,
+                answer_count=1,
+                answer_value_count=1,
+            ),
+            FakeSupplementResult(
+                submission_id=761,
+                answer_count=1,
+                answer_value_count=1,
+            ),
+        )
+    )
+
+    writer = MssqlSubmissionImportWriter(
+        connection_factory=(
+            FakeConnectionFactory(
+                connection
+            )
+        ),
+        batch_writer=FakeBatchWriter(),
+        submission_writer=(
+            submission_writer
+        ),
+    )
+
+    answer = create_supplement_answer()
+
+    result = writer.write_supplements(
+        requests=[
+            MssqlSubmissionSupplementWriteRequest(
+                submission_id=760,
+                answers=(
+                    answer,
+                ),
+            ),
+            MssqlSubmissionSupplementWriteRequest(
+                submission_id=761,
+                answers=(
+                    answer,
+                ),
+            ),
+        ]
+    )
+
+    assert (
+        result.supplement_submission_count
+        == 2
+    )
+
+    assert result.answer_count == 2
+    assert result.answer_value_count == 2
+
+    assert connection.commit_count == 1
+    assert connection.rollback_count == 0
+    assert connection.closed is True
+
+    assert len(
+        submission_writer.supplement_calls
+    ) == 2
+
+    assert (
+        submission_writer
+        .supplement_calls[0][0]
+        is connection._cursor
+    )
+
+    assert (
+        submission_writer
+        .supplement_calls[1][0]
+        is connection._cursor
+    )
+
+
+def test_import_writer_rolls_back_all_supplements_on_error():
+    connection = FakeConnection()
+
+    submission_writer = FakeSubmissionWriter(
+        fail_on_supplement_call=2
+    )
+
+    writer = MssqlSubmissionImportWriter(
+        connection_factory=(
+            FakeConnectionFactory(
+                connection
+            )
+        ),
+        batch_writer=FakeBatchWriter(),
+        submission_writer=(
+            submission_writer
+        ),
+    )
+
+    answer = create_supplement_answer()
+
+    with pytest.raises(
+        RuntimeError,
+        match="supplement write failed",
+    ):
+        writer.write_supplements(
+            requests=[
+                MssqlSubmissionSupplementWriteRequest(
+                    submission_id=760,
+                    answers=(
+                        answer,
+                    ),
+                ),
+                MssqlSubmissionSupplementWriteRequest(
+                    submission_id=761,
+                    answers=(
+                        answer,
+                    ),
+                ),
+            ]
+        )
+
+    assert connection.commit_count == 0
+    assert connection.rollback_count == 1
+    assert connection.closed is True
+
+    assert len(
+        submission_writer.supplement_calls
+    ) == 2
+
+
+def test_import_writer_rejects_duplicate_supplement_submission():
+    connection = FakeConnection()
+
+    submission_writer = FakeSubmissionWriter()
+
+    writer = MssqlSubmissionImportWriter(
+        connection_factory=(
+            FakeConnectionFactory(
+                connection
+            )
+        ),
+        batch_writer=FakeBatchWriter(),
+        submission_writer=(
+            submission_writer
+        ),
+    )
+
+    answer = create_supplement_answer()
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "duplicate supplement "
+            "submission_id"
+        ),
+    ):
+        writer.write_supplements(
+            requests=[
+                MssqlSubmissionSupplementWriteRequest(
+                    submission_id=760,
+                    answers=(
+                        answer,
+                    ),
+                ),
+                MssqlSubmissionSupplementWriteRequest(
+                    submission_id=760,
+                    answers=(
+                        answer,
+                    ),
+                ),
+            ]
+        )
+
+    assert connection.commit_count == 0
+    assert connection.rollback_count == 0
+
+    assert len(
+        submission_writer.supplement_calls
+    ) == 0
+
+
+def test_import_writer_supplement_rollback_mode_never_commits():
+    connection = FakeConnection()
+
+    submission_writer = FakeSubmissionWriter()
+
+    writer = MssqlSubmissionImportWriter(
+        connection_factory=(
+            FakeConnectionFactory(
+                connection
+            )
+        ),
+        batch_writer=FakeBatchWriter(),
+        submission_writer=(
+            submission_writer
+        ),
+    )
+
+    answer = create_supplement_answer()
+
+    result = writer.write_supplements_rollback(
+        requests=[
+            MssqlSubmissionSupplementWriteRequest(
+                submission_id=760,
+                answers=(
+                    answer,
+                ),
+            ),
+            MssqlSubmissionSupplementWriteRequest(
+                submission_id=761,
+                answers=(
+                    answer,
+                ),
+            ),
+        ]
+    )
+
+    assert (
+        result.supplement_submission_count
+        == 2
+    )
+
+    assert connection.commit_count == 0
+    assert connection.rollback_count == 1
+    assert connection.closed is True
