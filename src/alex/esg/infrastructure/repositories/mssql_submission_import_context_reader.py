@@ -42,6 +42,46 @@ class MssqlSubmissionImportContextReader:
             return ""
         return "".join(character for character in text.upper() if character.isalnum())
 
+    @classmethod
+    def business_identifiers_match(
+        cls,
+        left,
+        right,
+    ) -> bool:
+        normalized_left = (cls.normalize_business_identifier(left))
+
+        normalized_right = (cls.normalize_business_identifier(right))
+
+        if (
+            not normalized_left or not normalized_right
+        ):
+            return False
+
+        if (
+            normalized_left == normalized_right
+        ):
+            return True
+
+        if (
+            normalized_left.startswith("HU")
+            and len(normalized_left) == 10
+            and normalized_left[2:].isdigit()
+            and normalized_right.isdigit()
+            and len(normalized_right) == 11
+        ):
+            return (normalized_left[2:]== normalized_right[:8])
+
+        if (
+            normalized_right.startswith("HU")
+            and len(normalized_right) == 10
+            and normalized_right[2:].isdigit()
+            and normalized_left.isdigit()
+            and len(normalized_left) == 11
+        ):
+            return (normalized_right[2:] == normalized_left[:8])
+
+        return False
+
     def load_context(
         self,
         *,
@@ -165,20 +205,12 @@ class MssqlSubmissionImportContextReader:
                 )
 
             return SubmissionImportContext(
-                questionnaire_code=(
-                    questionnaire_code
-                ),
-                spec_version=(
-                    spec_version
-                ),
+                questionnaire_code=(questionnaire_code),
+                spec_version=(spec_version),
                 batch_id=batch_id,
                 batch_exists=batch_exists,
-                questionnaire_question_ids=(
-                    questionnaire_question_ids
-                ),
-                option_ids_by_question=(
-                    option_ids_by_question
-                ),
+                questionnaire_question_ids=(questionnaire_question_ids),
+                option_ids_by_question=(option_ids_by_question),
             )
         finally:
             connection.close()
@@ -189,33 +221,15 @@ class MssqlSubmissionImportContextReader:
             requester_tax_number: str,
             supplier_tax_number: str,
     ) -> int:
-        normalized_requester_tax = (
-            self.normalize_business_identifier(
-                requester_tax_number
-            )
-        )
-
-        normalized_supplier_tax = (
-            self.normalize_business_identifier(
-                supplier_tax_number
-            )
-        )
+        normalized_requester_tax = (self.normalize_business_identifier(requester_tax_number))
+        normalized_supplier_tax = (self.normalize_business_identifier(supplier_tax_number))
 
         if not normalized_requester_tax:
-            raise ValueError(
-                "requester tax_number "
-                "cannot be empty"
-            )
+            raise ValueError("requester tax_number cannot be empty")
 
         if not normalized_supplier_tax:
-            raise ValueError(
-                "supplier tax_number "
-                "cannot be empty"
-            )
-
-        connection = (
-            self._connection_factory.connect()
-        )
+            raise ValueError("supplier tax_number cannot be empty")
+        connection = (self._connection_factory.connect())
 
         try:
             cursor = connection.cursor()
@@ -244,44 +258,31 @@ class MssqlSubmissionImportContextReader:
             matching_relation_ids = []
 
             for row in cursor.fetchall():
-                db_requester_tax = (
-                    self.normalize_business_identifier(
-                        row[1]
-                    )
-                )
-
-                db_supplier_tax = (
-                    self.normalize_business_identifier(
-                        row[2]
-                    )
-                )
-
+                db_requester_tax = (self.normalize_business_identifier(row[1]))
+                db_supplier_tax = (self.normalize_business_identifier(row[2]))
                 if (
-                        db_requester_tax
-                        == normalized_requester_tax
-                        and db_supplier_tax
-                        == normalized_supplier_tax
-                ):
-                    matching_relation_ids.append(
-                        int(
-                            row[0]
+                        self.business_identifiers_match(
+                            db_requester_tax,
+                            normalized_requester_tax,
                         )
-                    )
+                        and
+                        self.business_identifiers_match(
+                            db_supplier_tax,
+                            normalized_supplier_tax,
+                        )
+                ):
+                    matching_relation_ids.append(int(row[0]))
 
             if not matching_relation_ids:
                 raise ValueError(
-                    "SUPPLY_CHAIN_RELATION "
-                    "does not exist for "
+                    "SUPPLY_CHAIN_RELATION does not exist for "
                     f"requester={normalized_requester_tax}, "
                     f"supplier={normalized_supplier_tax}"
                 )
 
-            if len(
-                    matching_relation_ids
-            ) > 1:
+            if len(matching_relation_ids) > 1:
                 raise RuntimeError(
-                    "multiple matching "
-                    "SUPPLY_CHAIN_RELATION rows: "
+                    "multiple matching SUPPLY_CHAIN_RELATION rows: "
                     f"{matching_relation_ids}"
                 )
 

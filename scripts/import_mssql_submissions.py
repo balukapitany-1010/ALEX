@@ -436,8 +436,7 @@ def main() -> int:
         print_execution_result(execution_result)
         print_verification_result(execution_result)
 
-        if (
-                execution_result.batch_created and execution_result.verification_succeeded is not True
+        if (execution_result.created_count > 0 and execution_result.verification_succeeded is not True
         ):
             return 3
 
@@ -456,14 +455,43 @@ def main() -> int:
 def print_verification_result(
     execution_result,
 ) -> None:
-    if not execution_result.batch_created:
+    if execution_result.created_count == 0:
         print()
         print(
             "IMPORT UTÓELLENŐRZÉS: "
             "NEM SZÜKSÉGES"
         )
         print(
-            "A batch már korábban létezett."
+            "Nem jött létre új submission."
+        )
+        return
+
+    if (
+        execution_result.verification_error
+        is not None
+    ):
+        print()
+        print("=" * 70)
+        print("IMPORT UTÓELLENŐRZÉS")
+        print("=" * 70)
+        print("ELLENŐRZÉS: HIBA")
+        print(
+            "Ok:",
+            execution_result.verification_error,
+        )
+        return
+
+    verification = (
+        execution_result.verification_result
+    )
+
+    if verification is None:
+        print()
+        print("=" * 70)
+        print("IMPORT UTÓELLENŐRZÉS")
+        print("=" * 70)
+        print(
+            "ELLENŐRZÉS: NINCS EREDMÉNY"
         )
         return
 
@@ -472,36 +500,140 @@ def print_verification_result(
     print("IMPORT UTÓELLENŐRZÉS")
     print("=" * 70)
 
-    if (
-        execution_result.verification_error
-        is not None
+    #
+    # Existing batch + új submission:
+    # exact submission verification.
+    #
+    if hasattr(
+        verification,
+        "items",
     ):
         print(
-            "ELLENŐRZÉSI HIBA:",
-            execution_result.verification_error,
+            "Típus: ÚJ SUBMISSION "
+            "MEGLÉVŐ BATCHBEN"
         )
 
         print(
-            "FIGYELEM: a COMMIT "
-            "már megtörtént."
+            "Ellenőrzött submission:",
+            verification.submission_count,
+        )
+
+        print("SUBMISSION_ANSWER:",
+            f"{verification.actual_answer_count}"
+            " / "
+            f"{verification.expected_answer_count}",
+        )
+
+        print(
+            "ANSWER_VALUE:",
+            f"{verification.actual_answer_value_count}"
+            " / "
+            f"{verification.expected_answer_value_count}",
+        )
+
+        print()
+
+        for item in verification.items:
+            print(
+                "submission_id:",
+                item.submission_id,
+            )
+
+            print(
+                "  submission_exists:",
+                (
+                    "OK"
+                    if item.submission_exists
+                    else "HIBÁS"
+                ),
+            )
+
+            print(
+                "  parent:",
+                (
+                    "OK"
+                    if item.parent_matches
+                    else "HIBÁS"
+                ),
+            )
+
+            print(
+                "  SUBMISSION_ANSWER:",
+                f"{item.actual_answer_count}"
+                " / "
+                f"{item.expected_answer_count}",
+            )
+
+            print(
+                "  ANSWER_VALUE:",
+                f"{item.actual_answer_value_count}"
+                " / "
+                f"{item.expected_answer_value_count}",
+            )
+
+            print(
+                "  question_id:",
+                (
+                    "OK"
+                    if item.question_ids_match
+                    else "HIBÁS"
+                ),
+            )
+
+            print(
+                "  values:",
+                (
+                    "OK"
+                    if item.answer_values_match
+                    else "HIBÁS"
+                ),
+            )
+
+            print(
+                "  RESULT:",
+                (
+                    "OK"
+                    if item.is_valid
+                    else "HIBÁS"
+                ),
+            )
+
+        print()
+
+        print(
+            "ELLENŐRZÉS:",
+            (
+                "SIKERES"
+                if verification.is_valid
+                else "HIBÁS"
+            ),
         )
 
         return
 
-    verification = (execution_result.verification_result)
-
-    if verification is None:
-        print(
-            "ELLENŐRZÉSI EREDMÉNY NINCS"
-        )
-        print(
-            "FIGYELEM: a COMMIT "
-            "már megtörtént."
-        )
-        return
+    #
+    # Teljesen új batch:
+    # batch szintű verification.
+    #
+    print("Típus: ÚJ BATCH")
 
     print(
-        "Batch:",
+        "batch_id:",
+        verification.batch_id,
+    )
+
+    print(
+        "questionnaire:",
+        verification.questionnaire_code,
+    )
+
+    print(
+        "spec_version:",
+        verification.spec_version,
+    )
+
+    print(
+        "batch:",
         (
             "OK"
             if verification.batch_exists
@@ -510,7 +642,7 @@ def print_verification_result(
     )
 
     print(
-        "Questionnaire/version:",
+        "questionnaire:",
         (
             "OK"
             if verification.questionnaire_matches
@@ -519,7 +651,7 @@ def print_verification_result(
     )
 
     print(
-        "Submission:",
+        "SUBMISSION:",
         f"{verification.actual_submission_count}"
         " / "
         f"{verification.expected_submission_count}",
@@ -549,7 +681,6 @@ def print_verification_result(
             else "HIBÁS"
         ),
     )
-
 
 if __name__ == "__main__":
     raise SystemExit(

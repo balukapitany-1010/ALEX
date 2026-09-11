@@ -139,8 +139,10 @@ class SubmissionImportExecutionResult:
         return sum(result.answer_value_count for result in self.write_results if result.created)
 
     @property
-    def verification_succeeded(self) -> bool | None:
-        if not self.batch_created:
+    def verification_succeeded(
+            self,
+    ) -> bool | None:
+        if self.created_count == 0:
             return None
 
         if self.verification_error is not None:
@@ -149,7 +151,7 @@ class SubmissionImportExecutionResult:
         if self.verification_result is None:
             return False
 
-        return self.verification_result.is_valid
+        return (self.verification_result.is_valid)
 
 @dataclass(frozen=True)
 class SubmissionSupplementExecutionResult:
@@ -586,22 +588,27 @@ class SubmissionImportOrchestrator:
         verification_result = None
         verification_error = None
 
-        if import_result.batch_created:
-            if self._import_verifier is None:
-                verification_error = ("import_verifier is not configured")
-
-            else:
-                try:
+        if self._import_verifier is not None:
+            try:
+                if import_result.batch_created:
                     verification_result = (self._import_verifier.verify_new_batch(
-                            batch_id=(dry_run.batch_id),
+                            batch_id=batch_id,
                             questionnaire_code=(dry_run.questionnaire_code),
                             spec_version=(dry_run.spec_version),
                             plans=plans,
                         )
                     )
 
-                except Exception as error:
-                    verification_error = str(error)
+                elif any(result.created for result in import_result.submission_results
+                ):
+                    verification_result = (self._import_verifier.verify_written_results(
+                            plans=plans,
+                            write_results=(import_result.submission_results),
+                        )
+                    )
+
+            except Exception as error:
+                verification_error = str(error)
 
         return SubmissionImportExecutionResult(
             dry_run=dry_run,

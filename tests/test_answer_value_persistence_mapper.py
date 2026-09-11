@@ -179,3 +179,55 @@ def test_rejects_invalid_single_option():
                 },
             )
         )
+def test_map_fields_skips_unknown_unselected_multi_option():
+    result = (AnswerValuePersistenceMapper.map_fields(
+            fields=[
+                {
+                    "type": "multi",
+                    "values": [
+                        {
+                            "optionId": "03182D16_2",
+                            "selected": False,
+                        },
+                        {
+                            "optionId": "03182D16_3",
+                            "selected": False,
+                        },
+                    ],
+                },
+            ],
+            questionnaire_option_ids={
+                "03182D16_1",
+                "03182D16_2",
+            },
+        )
+    )
+
+    assert len(result) == 1
+    assert (result[0].option_id == "03182D16_2")
+    assert result[0].selected is False
+
+
+def test_map_fields_rejects_unknown_selected_multi_option():
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match=("option_id is not valid for questionnaire question"),
+    ):
+        AnswerValuePersistenceMapper.map_fields(fields=[
+                {
+                    "type": "multi",
+                    "values": [
+                        {
+                            "optionId": "03182D16_3",
+                            "selected": True,
+                        },
+                    ],
+                },
+            ],
+            questionnaire_option_ids={
+                "03182D16_1",
+                "03182D16_2",
+            },
+        )

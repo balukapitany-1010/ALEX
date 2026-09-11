@@ -31,7 +31,14 @@ class FakeImportVerifier:
         fail=False,
         supplement_is_valid=True,
         supplement_fail=False,
+        written_is_valid=True,
+        written_fail=False,
     ):
+        self.written_is_valid = (written_is_valid)
+        self.written_fail = (written_fail)
+        self.verify_written_results_calls = 0
+        self.last_written_plans = None
+        self.last_written_results = None
         self.supplement_is_valid = (supplement_is_valid)
         self.supplement_fail = (supplement_fail)
         self.verify_supplement_items_calls = 0
@@ -43,6 +50,19 @@ class FakeImportVerifier:
         self.last_questionnaire_code = None
         self.last_spec_version = None
         self.last_plans = None
+
+    def verify_written_results(
+        self,
+        *,
+        plans,
+        write_results,
+    ):
+        self.verify_written_results_calls += 1
+        self.last_written_plans = list(plans)
+        self.last_written_results = tuple(write_results)
+        if self.written_fail:
+            raise RuntimeError("written verification failed")
+        return FakeVerificationResult(is_valid=self.written_is_valid)
 
     def verify_supplement_items(
         self,
@@ -259,6 +279,7 @@ class FakeWriter:
             existing_submission_ids_by_relation=None,
             supplement_existing_submission_id=None,
             supplement_has_answers=False,
+
     ):
         self.existing_submission_id = (existing_submission_id)
         self.existing_submission_ids_by_relation = (existing_submission_ids_by_relation)
@@ -268,6 +289,7 @@ class FakeWriter:
         self.supplement_existing_submission_id = (supplement_existing_submission_id)
         self.supplement_has_answers = (supplement_has_answers)
         self.preflight_supplement_calls = 0
+
 
     def preflight_supplement(
             self,
@@ -591,13 +613,13 @@ def test_execute_reports_existing_submission():
     assert result.write_results[0].created is False
 
 def test_execute_handles_existing_and_new_submissions():
+    import_verifier = FakeImportVerifier(written_is_valid=True)
     payload = create_mixed_payload()
-    context_reader = ( FakeContextReader(
-            relation_ids_by_supplier_tax={
-                "11102481207": 274,
-                "10654411243": 275,
-            }
-        )
+    context_reader = FakeContextReader(
+        relation_ids_by_supplier_tax={
+            "11102481207": 274,
+            "10654411243": 275,
+        }
     )
     writer = FakeWriter(
         existing_submission_ids_by_relation={
@@ -622,11 +644,11 @@ def test_execute_handles_existing_and_new_submissions():
             ),
         ),
     )
-    orchestrator = (SubmissionImportOrchestrator(
-            context_reader=(context_reader),
-            submission_writer=writer,
-            import_writer=import_writer,
-        )
+    orchestrator = SubmissionImportOrchestrator(
+        context_reader=context_reader,
+        submission_writer=writer,
+        import_writer=import_writer,
+        import_verifier=import_verifier,
     )
     result = orchestrator.execute(
         payload=payload,
@@ -641,11 +663,14 @@ def test_execute_handles_existing_and_new_submissions():
     assert len(import_writer.last_plans) == 2
     assert result.created_count == 1
     assert result.existing_count == 1
-    assert (result.created_answer_count == 1)
-    assert (result.created_answer_value_count == 1)
+    assert result.created_answer_count == 1
+    assert result.created_answer_value_count == 1
     assert (result.write_results[0].submission_id == 323)
     assert (result.write_results[0].created is False)
     assert (result.write_results[1].created is True)
+    assert (import_verifier.verify_written_results_calls == 1)
+    assert (result.verification_succeeded is True)
+
 def test_dry_run_supports_new_batch_without_preflight():
     writer = FakeWriter(
         existing_submission_id=None
@@ -1146,3 +1171,68 @@ def test_execute_supplements_preserves_commit_result_when_verifier_fails():
     assert (result.supplement_submission_count == 1)
     assert (result.verification_succeeded is False)
     assert (result.verification_error == "supplement verification failed")
+
+def test_execute_existing_batch_reports_failed_written_verification():
+    payload = create_payload()
+    writer = FakeWriter(existing_submission_id=None)
+    import_writer = FakeImportWriter(
+        batch_created=False,
+        submission_results=(
+            FakeWriteResult(
+                submission_id=1001,
+                created=True,
+                answer_count=1,
+                answer_value_count=1,
+            ),
+        ),
+    )
+
+    import_verifier = FakeImportVerifier(written_is_valid=False)
+    orchestrator = SubmissionImportOrchestrator(
+        context_reader=FakeContextReader(batch_exists=True),
+        submission_writer=writer,
+        import_writer=import_writer,
+        import_verifier=import_verifier,
+    )
+    result = orchestrator.execute(
+        payload=payload,
+        batch_id="BATCH_TEST",
+    )
+
+    assert result.batch_created is False
+    assert result.created_count == 1
+    assert (result.verification_result is not None)
+    assert (result.verification_succeeded is False)
+
+
+def test_execute_existing_batch_preserves_commit_when_written_verifier_fails():
+    writer = FakeWriter(existing_submission_id=None)
+
+    import_writer = FakeImportWriter(
+        batch_created=False,
+        submission_results=(FakeWriteResult(
+                submission_id=1001,
+                created=True,
+                answer_count=1,
+                answer_value_count=1,
+            ),
+        ),
+    )
+
+    import_verifier = FakeImportVerifier(written_fail=True)
+
+    orchestrator = SubmissionImportOrchestrator(
+        context_reader=FakeContextReader(batch_exists=True),
+        submission_writer=writer,
+        import_writer=import_writer,
+        import_verifier=import_verifier,
+    )
+
+    result = orchestrator.execute(
+        payload=create_payload(),
+        batch_id="BATCH_TEST",
+    )
+    assert result.created_count == 1
+    assert (result.verification_result is None)
+    assert (result.verification_error == "written verification failed")
+    assert (result.verification_succeeded is False)

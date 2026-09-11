@@ -155,6 +155,30 @@ class AnswerValuePersistenceMapper:
             values = field.get("values") or []
 
             for raw_value in values:
+                if isinstance(
+                        raw_value,
+                        dict,
+                ):
+                    normalized_field_type = (cls._optional_text(field_type))
+                    raw_option_id = (cls._optional_text(raw_value.get("optionId")))
+
+                    if (
+                            normalized_field_type
+                            in {
+                        "single",
+                        "multi",
+                    }
+                            and raw_option_id
+                            is not None
+                            and raw_option_id
+                            not in questionnaire_option_ids
+                            and raw_value.get(
+                        "selected"
+                    )
+                            is False
+                    ):
+                        continue
+
                 result.append(cls.map_value(
                         field_type=field_type,
                         raw_value=raw_value,

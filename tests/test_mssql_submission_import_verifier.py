@@ -4,9 +4,17 @@ from decimal import Decimal
 from alex.esg.infrastructure.repositories.mssql_submission_import_verifier import (
     MssqlSubmissionImportVerifier,
     MssqlSubmissionSupplementVerificationRequest,
+    MssqlSubmissionWriteVerificationRequest,
 )
 from alex.esg.services.answer_value_persistence_mapper import AnswerValuePersistenceData
 from alex.esg.services.submission_answer_persistence_mapper import SubmissionAnswerPersistenceData
+from dataclasses import dataclass
+import pytest
+
+@dataclass(frozen=True)
+class FakeSubmissionWriteResult:
+    submission_id: int
+    created: bool
 
 class FakeCursor:
     def __init__(
@@ -18,7 +26,11 @@ class FakeCursor:
         answer_value_count=3,
         supplement_parent_row=None,
         supplement_answer_rows=None,
+        written_parent_row=None,
+        written_answer_rows=None,
     ):
+        self.written_parent_row = (written_parent_row)
+        self.written_answer_rows = list(written_answer_rows or ())
         self.batch_row = batch_row
         self.submission_count = (submission_count)
         self.answer_count = (answer_count)
@@ -33,74 +45,44 @@ class FakeCursor:
             sql,
             *params,
     ):
-        normalized_sql = " ".join(
-            sql.split()
-        )
+        normalized_sql = " ".join(sql.split())
 
-        if (
-                "FROM dbo.SUBMISSION"
-                in normalized_sql
-                and "WHERE submission_id = ?"
-                in normalized_sql
-                and "COUNT_BIG"
-                not in normalized_sql
+        if ("FROM dbo.SUBMISSION" in normalized_sql and "WHERE submission_id = ?" in normalized_sql and "respondent_id" in normalized_sql and "org_size" in normalized_sql and "COUNT_BIG" not in normalized_sql
         ):
-            self._result = (
-                self.supplement_parent_row
-            )
+            self._result = (self.written_parent_row)
+
             self._rows = []
-
-        elif (
-                "FROM dbo.SUBMISSION_ANSWER AS sa"
-                in normalized_sql
-                and "LEFT JOIN dbo.ANSWER_VALUE AS av"
-                in normalized_sql
-                and "WHERE sa.submission_id = ?"
-                in normalized_sql
+        elif ("FROM dbo.SUBMISSION" in normalized_sql and "WHERE submission_id = ?" in normalized_sql and "COUNT_BIG" not in normalized_sql
         ):
+            self._result = (self.supplement_parent_row)
+            self._rows = []
+        elif ("FROM dbo.SUBMISSION_ANSWER AS sa" in normalized_sql and "LEFT JOIN dbo.ANSWER_VALUE AS av" in normalized_sql and "WHERE sa.submission_id = ?" in normalized_sql
+        ):
+            if (self.written_parent_row is not None
+            ):
+                self._rows = list(self.written_answer_rows)
+            else:
+                self._rows = list(self.supplement_answer_rows)
             self._result = None
-            self._rows = list(
-                self.supplement_answer_rows
-            )
 
-        elif (
-                "FROM dbo.SUBMISSION_BATCH"
-                in normalized_sql
+        elif ("FROM dbo.SUBMISSION_BATCH" in normalized_sql
         ):
-            self._result = (
-                self.batch_row
-            )
+            self._result = (self.batch_row)
 
-        elif (
-                "FROM dbo.SUBMISSION_ANSWER AS sa"
-                in normalized_sql
-                and "dbo.ANSWER_VALUE"
-                not in normalized_sql
+        elif ("FROM dbo.SUBMISSION_ANSWER AS sa" in normalized_sql  and "dbo.ANSWER_VALUE" not in normalized_sql
         ):
-            self._result = (
-                self.answer_count,
-            )
+            self._result = (self.answer_count,)
 
-        elif (
-                "FROM dbo.ANSWER_VALUE AS av"
-                in normalized_sql
+        elif ("FROM dbo.ANSWER_VALUE AS av" in normalized_sql
         ):
-            self._result = (
-                self.answer_value_count,
-            )
+            self._result = (self.answer_value_count,)
 
-        elif (
-                "FROM dbo.SUBMISSION"
-                in normalized_sql
+        elif ("FROM dbo.SUBMISSION" in normalized_sql
         ):
-            self._result = (
-                self.submission_count,
-            )
+            self._result = (self.submission_count,)
 
         else:
-            raise AssertionError(
-                normalized_sql
-            )
+            raise AssertionError(normalized_sql)
 
         return self
     def fetchone(
@@ -110,9 +92,7 @@ class FakeCursor:
     def fetchall(
         self,
     ):
-        return list(
-            self._rows
-        )
+        return list(self._rows)
 
 
 class FakeConnection:
@@ -177,8 +157,7 @@ def create_plan(
             self,
             value_count,
         ):
-            self.values = tuple(object()
-                for _ in range(value_count))
+            self.values = tuple(object() for _ in range(value_count))
 
     answers = []
     remaining_values = (answer_value_count)
@@ -199,12 +178,8 @@ def create_exact_supplement_plan():
     submission = SubmissionPersistenceData(
         batch_id="BATCH_TEST",
         relation_id=123,
-        external_supplier_key=(
-            "SUP_12345678"
-        ),
-        respondent_id=(
-            "RESP_12345678_2026-Q2"
-        ),
+        external_supplier_key=("SUP_12345678"),
+        respondent_id=("RESP_12345678_2026-Q2"),
         respondent_mp_id=None,
         org_size=None,
         submitted_at=None,
@@ -220,20 +195,51 @@ def create_exact_supplement_plan():
         text_value="supplement",
     )
 
-    answer = (
-        SubmissionAnswerPersistenceData(
+    answer = (SubmissionAnswerPersistenceData(
             question_id="Q1",
-            values=(
-                value,
-            ),
+            values=(value,),
         )
     )
 
     return SubmissionPersistencePlan(
         submission=submission,
-        answers=(
-            answer,
+        answers=(answer,),
+        skipped_question_ids=(),
+    )
+def create_exact_written_plan():
+    submission = SubmissionPersistenceData(
+        batch_id="BATCH_TEST",
+        relation_id=123,
+        external_supplier_key=(
+            "SUP_12345678"
         ),
+        respondent_id=(
+            "RESP_12345678_2026-Q2"
+        ),
+        respondent_mp_id=None,
+        org_size="large",
+        submitted_at=None,
+        status="imported_complete",
+        raw_payload="{}",
+    )
+
+    value = AnswerValuePersistenceData(
+        field_type="text",
+        option_id=None,
+        selected=None,
+        number_value=None,
+        text_value="written",
+    )
+
+    answer = (SubmissionAnswerPersistenceData(
+            question_id="Q1",
+            values=(value,),
+        )
+    )
+
+    return SubmissionPersistencePlan(
+        submission=submission,
+        answers=(answer,),
         skipped_question_ids=(),
     )
 
@@ -288,7 +294,6 @@ def test_verifier_detects_wrong_answer_count():
     cursor = FakeCursor(answer_count=999)
     connection = FakeConnection(cursor)
     verifier = (MssqlSubmissionImportVerifier(FakeConnectionFactory(connection)))
-
     result = verifier.verify_new_batch(
         batch_id="BATCH_TEST",
         questionnaire_code="SZTFH",
@@ -374,23 +379,11 @@ def test_verifier_accepts_exact_supplement_state():
         ],
     )
 
-    connection = FakeConnection(
-        cursor
-    )
-
-    verifier = MssqlSubmissionImportVerifier(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
-    result = verifier.verify_supplements(
-        requests=[
-            MssqlSubmissionSupplementVerificationRequest(
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
+    result = verifier.verify_supplements(requests=[MssqlSubmissionSupplementVerificationRequest(
                 submission_id=760,
-                plan=(
-                    create_exact_supplement_plan()
-                ),
+                plan=(create_exact_supplement_plan()),
             )
         ]
     )
@@ -399,17 +392,9 @@ def test_verifier_accepts_exact_supplement_state():
     assert result.submission_count == 1
     assert result.expected_answer_count == 1
     assert result.actual_answer_count == 1
-    assert (
-        result.expected_answer_value_count
-        == 1
-    )
-    assert (
-        result.actual_answer_value_count
-        == 1
-    )
-
+    assert (result.expected_answer_value_count == 1)
+    assert (result.actual_answer_value_count == 1)
     assert result.items[0].is_valid is True
-
     assert connection.rolled_back is True
     assert connection.closed is True
 
@@ -426,32 +411,17 @@ def test_verifier_detects_missing_supplement_answer():
         supplement_answer_rows=[],
     )
 
-    connection = FakeConnection(
-        cursor
-    )
-
-    verifier = MssqlSubmissionImportVerifier(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
     result = verifier.verify_supplements(
-        requests=[
-            MssqlSubmissionSupplementVerificationRequest(
+        requests=[MssqlSubmissionSupplementVerificationRequest(
                 submission_id=760,
-                plan=(
-                    create_exact_supplement_plan()
-                ),
+                plan=(create_exact_supplement_plan()),
             )
         ]
     )
-
     assert result.is_valid is False
-    assert (
-        result.items[0].question_ids_match
-        is False
-    )
+    assert (result.items[0].question_ids_match is False)
 
 
 def test_verifier_detects_changed_supplement_value():
@@ -476,36 +446,18 @@ def test_verifier_detects_changed_supplement_value():
         ],
     )
 
-    connection = FakeConnection(
-        cursor
-    )
-
-    verifier = MssqlSubmissionImportVerifier(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
-    result = verifier.verify_supplements(
-        requests=[
-            MssqlSubmissionSupplementVerificationRequest(
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
+    result = verifier.verify_supplements(requests=[MssqlSubmissionSupplementVerificationRequest(
                 submission_id=760,
-                plan=(
-                    create_exact_supplement_plan()
-                ),
+                plan=(create_exact_supplement_plan()),
             )
         ]
     )
 
     assert result.is_valid is False
-    assert (
-        result.items[0].question_ids_match
-        is True
-    )
-    assert (
-        result.items[0].answer_values_match
-        is False
-    )
+    assert (result.items[0].question_ids_match is True)
+    assert (result.items[0].answer_values_match is False)
 
 
 def test_verifier_detects_wrong_supplement_parent():
@@ -530,32 +482,16 @@ def test_verifier_detects_wrong_supplement_parent():
         ],
     )
 
-    connection = FakeConnection(
-        cursor
-    )
-
-    verifier = MssqlSubmissionImportVerifier(
-        FakeConnectionFactory(
-            connection
-        )
-    )
-
-    result = verifier.verify_supplements(
-        requests=[
-            MssqlSubmissionSupplementVerificationRequest(
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
+    result = verifier.verify_supplements(requests=[MssqlSubmissionSupplementVerificationRequest(
                 submission_id=760,
-                plan=(
-                    create_exact_supplement_plan()
-                ),
+                plan=(create_exact_supplement_plan()),
             )
         ]
     )
-
     assert result.is_valid is False
-    assert (
-        result.items[0].parent_matches
-        is False
-    )
+    assert (result.items[0].parent_matches is False)
 
 
 def test_verifier_detects_missing_supplement_submission():
@@ -564,6 +500,181 @@ def test_verifier_detects_missing_supplement_submission():
         supplement_answer_rows=[],
     )
 
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
+    result = verifier.verify_supplements(requests=[MssqlSubmissionSupplementVerificationRequest(
+                submission_id=760,
+                plan=(create_exact_supplement_plan()),
+            )
+        ]
+    )
+
+    assert result.is_valid is False
+    assert (result.items[0].submission_exists is False)
+    assert (result.items[0].actual_answer_count == 0)
+    assert (result.items[0].actual_answer_value_count == 0)
+
+def test_verifier_accepts_exact_written_submission():
+    cursor = FakeCursor(
+        written_parent_row=(
+            "BATCH_TEST",
+            123,
+            "SUP_12345678",
+            "RESP_12345678_2026-Q2",
+            None,
+            "large",
+            None,
+            "imported_complete",
+        ),
+        written_answer_rows=[
+            (
+                2001,
+                "Q1",
+                "text",
+                None,
+                None,
+                None,
+                "written",
+            ),
+        ],
+    )
+
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
+    result = (verifier.verify_written_submissions(requests=[MssqlSubmissionWriteVerificationRequest(
+                    submission_id=1001,
+                    plan=(create_exact_written_plan()),
+                )
+            ]
+        )
+    )
+
+    assert result.is_valid is True
+    assert result.submission_count == 1
+    assert (result.items[0].submission_exists is True)
+    assert (result.items[0].parent_matches is True)
+    assert (result.items[0].question_ids_match is True)
+    assert (result.items[0].answer_values_match is True)
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+
+def test_verifier_detects_wrong_written_respondent_id():
+    cursor = FakeCursor(
+        written_parent_row=(
+            "BATCH_TEST",
+            123,
+            "SUP_12345678",
+            "WRONG_RESPONDENT",
+            None,
+            "large",
+            None,
+            "imported_complete",
+        ),
+        written_answer_rows=[
+            (
+                2001,
+                "Q1",
+                "text",
+                None,
+                None,
+                None,
+                "written",
+            ),
+        ],
+    )
+
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
+    result = (verifier.verify_written_submissions(requests=[MssqlSubmissionWriteVerificationRequest(
+                    submission_id=1001,
+                    plan=(create_exact_written_plan()),
+                )
+            ]
+        )
+    )
+
+
+    assert result.is_valid is False
+    assert (result.items[0].parent_matches is False)
+
+
+def test_verifier_detects_missing_written_answer():
+    cursor = FakeCursor(
+        written_parent_row=(
+            "BATCH_TEST",
+            123,
+            "SUP_12345678",
+            "RESP_12345678_2026-Q2",
+            None,
+            "large",
+            None,
+            "imported_complete",
+        ),
+        written_answer_rows=[],
+    )
+
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
+    result = (verifier.verify_written_submissions(requests=[MssqlSubmissionWriteVerificationRequest(
+                    submission_id=1001,
+                    plan=(create_exact_written_plan()),
+                )
+            ]
+        )
+    )
+
+    assert result.is_valid is False
+    assert (result.items[0].question_ids_match is False)
+    assert (result.items[0].actual_answer_count == 0)
+
+
+def test_verifier_detects_changed_written_value():
+    cursor = FakeCursor(
+        written_parent_row=(
+            "BATCH_TEST",
+            123,
+            "SUP_12345678",
+            "RESP_12345678_2026-Q2",
+            None,
+            "large",
+            None,
+            "imported_complete",
+        ),
+        written_answer_rows=[
+            (
+                2001,
+                "Q1",
+                "text",
+                None,
+                None,
+                None,
+                "CHANGED",
+            ),
+        ],
+    )
+
+    connection = FakeConnection(cursor)
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(connection))
+    result = (verifier.verify_written_submissions(requests=[MssqlSubmissionWriteVerificationRequest(
+                    submission_id=1001,
+                    plan=(create_exact_written_plan()),
+                )
+            ]
+        )
+    )
+
+    assert result.is_valid is False
+    assert (result.items[0].question_ids_match is True)
+    assert (result.items[0].answer_values_match is False)
+
+
+def test_verifier_detects_missing_written_submission():
+    cursor = FakeCursor(
+        written_parent_row=None,
+        written_answer_rows=[],
+    )
+
     connection = FakeConnection(
         cursor
     )
@@ -574,30 +685,77 @@ def test_verifier_detects_missing_supplement_submission():
         )
     )
 
-    result = verifier.verify_supplements(
-        requests=[
-            MssqlSubmissionSupplementVerificationRequest(
-                submission_id=760,
-                plan=(
-                    create_exact_supplement_plan()
-                ),
-            )
-        ]
+    result = (verifier.verify_written_submissions(requests=[MssqlSubmissionWriteVerificationRequest(
+                    submission_id=1001,
+                    plan=(create_exact_written_plan()),
+                )
+            ]
+        )
     )
-
     assert result.is_valid is False
+    assert (result.items[0].submission_exists is False)
+    assert (result.items[0].actual_answer_count == 0)
+    assert (result.items[0].actual_answer_value_count == 0)
 
-    assert (
-        result.items[0].submission_exists
-        is False
+def test_verify_written_results_verifies_only_created_submission():
+    plan = create_exact_written_plan()
+
+    cursor = FakeCursor(
+        written_parent_row=(
+            "BATCH_TEST",
+            123,
+            "SUP_12345678",
+            "RESP_12345678_2026-Q2",
+            None,
+            "large",
+            None,
+            "imported_complete",
+        ),
+        written_answer_rows=[
+            (
+                2001,
+                "Q1",
+                "text",
+                None,
+                None,
+                None,
+                "written",
+            ),
+        ],
     )
 
-    assert (
-        result.items[0].actual_answer_count
-        == 0
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(FakeConnection(cursor)))
+
+    result = verifier.verify_written_results(
+        plans=[
+            plan,
+            plan,
+        ],
+        write_results=(
+            FakeSubmissionWriteResult(
+                submission_id=323,
+                created=False,
+            ),
+            FakeSubmissionWriteResult(
+                submission_id=1001,
+                created=True,
+            ),
+        ),
     )
 
-    assert (
-        result.items[0].actual_answer_value_count
-        == 0
-    )
+    assert result.is_valid is True
+    assert result.submission_count == 1
+    assert (result.items[0].submission_id == 1001)
+
+
+def test_verify_written_results_rejects_count_mismatch():
+    verifier = MssqlSubmissionImportVerifier(FakeConnectionFactory(FakeConnection(FakeCursor())))
+
+    with pytest.raises(
+        ValueError,
+        match=("plans and write_results count must match"),
+    ):
+        verifier.verify_written_results(
+            plans=[create_exact_written_plan(),],
+            write_results=(),
+        )
